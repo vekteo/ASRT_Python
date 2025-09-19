@@ -255,13 +255,29 @@ if PRACTICE_ENABLED:
 
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
+        
+        # New conditional feedback logic for practice blocks
+        if accuracy < 90:
+            performance_message = "Please try to be more accurate."
+            performance_color = 'red'
+        elif mean_rt > 0.350:
+            performance_message = "Please try to be faster."
+            performance_color = 'red'
+        else:
+            performance_message = "Good job."
+            performance_color = 'green'
 
-        feedback_text = f"End of Practice Block {practice_block_num} feedback:\n\n" \
-                        f"Mean RT: {mean_rt:.2f} s\n" \
-                        f"Accuracy: {accuracy:.2f} %"
+        feedback_header_text = f"End of Practice Block {practice_block_num} feedback:"
+        feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
 
-        feedback_message = visual.TextStim(win, text=feedback_text, color='black', height=40, wrapWidth=1000)
-        feedback_message.draw()
+        feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100))
+        feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0))
+        feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100))
+        
+        win.flip()
+        feedback_header.draw()
+        feedback_stats.draw()
+        feedback_performance.draw()
 
         if p_port:
             p_port.setData(40 + practice_block_num)
@@ -277,6 +293,8 @@ if PRACTICE_ENABLED:
         if practice_block_num < NUM_PRACTICE_BLOCKS:
             continuation_text = "Press any key to start the next practice block."
             continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
+            
+            win.flip()
             continuation_message.draw()
             win.flip()
 
@@ -291,6 +309,8 @@ if PRACTICE_ENABLED:
     # --- Transition to Main Experiment ---
     end_practice_text = "Practice is complete. Press any key to start the main experiment."
     end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000)
+    
+    win.flip()
     end_practice_message.draw()
     win.flip()
     event.waitKeys()
@@ -504,13 +524,31 @@ for block_num in range(1, NUM_BLOCKS + 1):
 
     mean_rt = np.mean(correct_rts) if correct_rts else 0
     accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
+    
+    # Determine the performance message and color
+    if accuracy < 90:
+        performance_message = "Please try to be more accurate."
+        performance_color = 'red'
+    elif mean_rt > 0.350:
+        performance_message = "Please try to be faster."
+        performance_color = 'red'
+    else:
+        performance_message = "Good job."
+        performance_color = 'green'
 
-    feedback_text = f"End of block {block_num} feedback:\n\n" \
-                    f"Mean RT: {mean_rt:.2f} s\n" \
-                    f"Accuracy: {accuracy:.2f} %"
-
-    feedback_message = visual.TextStim(win, text=feedback_text, color='black', height=40, wrapWidth=1000)
-    feedback_message.draw()
+    # Create separate TextStim objects for each part of the feedback
+    feedback_header_text = f"End of block {block_num} feedback:"
+    feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
+    
+    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000)
+    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000)
+    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000)
+    
+    # Draw all three stimuli before the flip
+    win.flip()
+    feedback_header.draw()
+    feedback_stats.draw()
+    feedback_performance.draw()
 
     if p_port:
         p_port.setData(20 + block_num)
@@ -526,6 +564,8 @@ for block_num in range(1, NUM_BLOCKS + 1):
     if block_num < NUM_BLOCKS:
         continuation_text = "Press any key to start the next block."
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
+        
+        win.flip()
         continuation_message.draw()
         win.flip()
 
