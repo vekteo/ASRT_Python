@@ -1,0 +1,326 @@
+# Import the necessary PsychoPy libraries and other modules
+from psychopy import visual, core, event, gui, parallel
+import random
+import csv
+import configparser
+import numpy as np
+import os
+
+# --- GUI for Participant Info ---
+expInfo = {'participant': '1', 'session': '1'}
+dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
+if not dlg.OK:
+    core.quit()
+
+# --- Load Experiment Settings from a separate file ---
+config = configparser.ConfigParser()
+try:
+    config.read('experiment_settings.ini')
+    TRIALS_PER_BLOCK = config.getint('Experiment', 'num_trials')
+    NUM_BLOCKS = config.getint('Experiment', 'num_blocks')
+except (configparser.Error, FileNotFoundError) as e:
+    print(f"Error reading configuration file: {e}")
+    core.quit()
+
+# --- Define a list of possible sequences ---
+all_sequences = [
+    [1, 2, 3, 4],
+    [1, 2, 4, 3],
+    [1, 3, 2, 4],
+    [1, 3, 4, 2],
+    [1, 4, 3, 2],
+    [1, 4, 2, 3]
+]
+
+# Get the participant number and use it to select a sequence
+participant_num = int(expInfo['participant'])
+sequence_index = (participant_num - 1) % len(all_sequences)
+pattern_sequence = all_sequences[sequence_index]
+
+# Convert the selected pattern sequence to a string for easy saving
+sequence_to_save = str(pattern_sequence).replace('[', '').replace(']', '').replace(' ', '')
+
+# --- Setup the PsychoPy window and stimuli ---
+win = visual.Window(
+    size=[1024, 768],
+    fullscr=True,
+    monitor="testMonitor",
+    units="pix",
+    color='white',
+    multiSample=True,
+    numSamples=16
+)
+
+# --- Define image path ---
+target_image_path = 'target_image.png'
+
+# Define stimulus properties
+circle_radius = 60
+y_pos = 0.0
+x_positions = [-300, -100, 100, 300]
+
+# Create circle stimuli and their corresponding keys
+stimuli = []
+keys = ['s', 'f', 'j', 'l']
+for x, key in zip(x_positions, keys):
+    circle = visual.Circle(
+        win=win,
+        radius=circle_radius,
+        fillColor='white',
+        lineColor='black',
+        lineWidth=3,
+        pos=(x, y_pos)
+    )
+    stimuli.append({'stim': circle, 'key': key})
+
+# State variables for the experiment
+trial_data = [] # To save all trial data
+total_trial_count = 0
+
+# --- Initialize Parallel Port for Triggers ---
+try:
+    p_port = parallel.ParallelPort(address='0x0378')
+    p_port.setData(0)
+except Exception as e:
+    print(f"Parallel port not found or could not be initialized: {e}")
+    p_port = None
+    
+# Store positions of the last two trials for the 2-back check
+pos_minus_1 = None
+pos_minus_2 = None
+
+# --- Main Experiment Loop ---
+for block_num in range(1, NUM_BLOCKS + 1):
+    block_data = []
+    pattern_index = 0
+    
+    # New: Create a balanced list of random trial positions for this block
+    random_positions_list = []
+    num_random_trials = TRIALS_PER_BLOCK // 2
+    positions_per_stim = num_random_trials // len(stimuli)
+    for pos_num in range(1, len(stimuli) + 1):
+        random_positions_list.extend([pos_num] * positions_per_stim)
+    random.shuffle(random_positions_list)
+    random_list_index = 0 # To track position in the list
+
+    for trial_in_block in range(TRIALS_PER_BLOCK):
+        total_trial_count += 1
+        trial_in_block_num = trial_in_block + 1
+        if 'escape' in event.getKeys():
+            break
+
+        for stim_dict in stimuli:
+            stim_dict['stim'].fillColor = 'white'
+    
+        for stim_dict in stimuli:
+            stim_dict['stim'].draw()
+        win.flip()
+        core.wait(0.120)
+
+        # Determine the trial type and the target circle position (1-4)
+        if trial_in_block_num % 2 == 0:
+            target_stim_pos = pattern_sequence[pattern_index]
+            pattern_index = (pattern_index + 1) % len(pattern_sequence)
+            trial_type = 'P'
+            response_type_base = 110
+            incorrect_response_base = 120
+        else:
+            # Get the next position from the pre-shuffled list
+            target_stim_pos = random_positions_list[random_list_index]
+            random_list_index += 1
+            trial_type = 'R'
+            response_type_base = 130
+            incorrect_response_base = 140
+    
+        # --- Calculate Probability based on the n-2 and n-1 position rule ---
+        probability_type = 'L'  # Default to Low
+        if trial_type == 'P':
+            probability_type = 'H'
+        else:
+            if pos_minus_2 is not None:
+                two_back_pos_idx = pattern_sequence.index(pos_minus_2)
+                # Determine what position *follows* the n-2 position in the sequence
+                expected_next_pos = pattern_sequence[(two_back_pos_idx + 1) % len(pattern_sequence)]
+                # Determine what position *precedes* the n position in the sequence
+                current_pos_idx = pattern_sequence.index(target_stim_pos)
+                expected_two_back_pos = pattern_sequence[(current_pos_idx - 1) % len(pattern_sequence)]
+                
+                # Case 1: n-2 position follows the n position
+                if pos_minus_2 == expected_two_back_pos:
+                    probability_type = 'H'
+                # Case 2: n-2 position is the same as the n position
+                elif pos_minus_2 == target_stim_pos:
+                    probability_type = 'T'
+                    # Case 3: n-1 is also the same as n
+                    if pos_minus_1 is not None and pos_minus_1 == target_stim_pos:
+                        probability_type = 'R'
+    
+        # Override for the first two trials of the block
+        if trial_in_block_num <= 2:
+            probability_type = 'X'
+
+        # --- Calculate Onset Trigger based on Type and Probability ---
+        if trial_type == 'P':
+            trial_trigger = 50
+        elif trial_type == 'R':
+            if probability_type == 'H':
+                trial_trigger = 61
+            elif probability_type == 'L':
+                trial_trigger = 62
+            elif probability_type == 'T':
+                trial_trigger = 63
+            elif probability_type == 'R':
+                trial_trigger = 64
+            elif probability_type == 'X':
+                trial_trigger = 65
+
+        # Update the positions of the last two trials
+        pos_minus_2 = pos_minus_1
+        pos_minus_1 = target_stim_pos
+
+        target_stim_index = target_stim_pos - 1
+    
+        stimuli[target_stim_index]['stim'].fillColor = 'blue'
+    
+        border_circle = visual.Circle(
+            win=win,
+            radius=circle_radius,
+            fillColor='black',
+            pos=stimuli[target_stim_index]['stim'].pos
+        )
+        image_size = circle_radius * 2 - 3
+        target_image = visual.ImageStim(
+            win=win,
+            image=target_image_path,
+            size=image_size,
+            pos=stimuli[target_stim_index]['stim'].pos
+        )
+    
+        if p_port:
+            p_port.setData(trial_trigger)
+            core.wait(0.01)
+            p_port.setData(0)
+        print(f"Trial {total_trial_count} onset trigger: {trial_trigger} (Type: {trial_type}, Pos: {target_stim_pos}, Prob: {probability_type})")
+
+        cumulative_timer = core.Clock()
+        response_timer = core.Clock()
+    
+        correct_response_given = False
+        while not correct_response_given:
+            if 'escape' in event.getKeys():
+                break
+        
+            for stim_dict in stimuli:
+                stim_dict['stim'].draw()
+            border_circle.draw()
+            target_image.draw()
+            win.flip()
+        
+            response_keys = event.getKeys(keyList=keys + ['escape'])
+        
+            if response_keys:
+                pressed_key = response_keys[0]
+            
+                if pressed_key == 'escape':
+                    break
+            
+                rt_non_cumulative = response_timer.getTime()
+                rt_cumulative = cumulative_timer.getTime()
+            
+                was_correct = (pressed_key == stimuli[target_stim_index]['key'])
+                pressed_key_pos = keys.index(pressed_key) + 1
+            
+                if was_correct:
+                    response_trigger = response_type_base + pressed_key_pos
+                else:
+                    response_trigger = incorrect_response_base + pressed_key_pos
+                
+                if p_port:
+                    p_port.setData(response_trigger)
+                    core.wait(0.01)
+                    p_port.setData(0)
+                print(f"Response trigger: {response_trigger} (Type: {trial_type}, Correct: {was_correct}, Key Pos: {pressed_key_pos})")
+
+                block_data.append({
+                    'participant': expInfo['participant'],
+                    'session': expInfo['session'],
+                    'block_number': block_num,
+                    'trial_number': total_trial_count,
+                    'trial_in_block_num': trial_in_block + 1,
+                    'trial_type': trial_type,
+                    'probability_type': probability_type,
+                    'sequence_used': sequence_to_save,
+                    'stimulus_position_num': target_stim_pos,
+                    'rt_non_cumulative_s': rt_non_cumulative,
+                    'rt_cumulative_s': rt_cumulative,
+                    'correct_key_pressed': stimuli[target_stim_index]['key'],
+                    'response_key_pressed': pressed_key,
+                    'correct_response': was_correct
+                })
+            
+                response_timer.reset()
+
+                if was_correct:
+                    correct_response_given = True
+        
+        if 'escape' in event.getKeys():
+            break
+    
+    # --- Display feedback for 3 seconds ---
+    correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response']]
+    total_correct_responses = sum(1 for d in block_data if d['correct_response'])
+    total_responses = len(block_data)
+
+    mean_rt = np.mean(correct_rts) if correct_rts else 0
+    accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
+
+    feedback_text = f"End of block {block_num} feedback:\n\n" \
+                    f"Mean RT: {mean_rt:.2f} s\n" \
+                    f"Accuracy: {accuracy:.2f} %"
+
+    feedback_message = visual.TextStim(win, text=feedback_text, color='black', height=40, wrapWidth=1000)
+    feedback_message.draw()
+
+    # --- Send trigger for feedback onset ---
+    if p_port:
+        p_port.setData(20)
+        core.wait(0.01)
+        p_port.setData(0)
+
+    win.flip()
+    core.wait(3) # Wait for 3 seconds
+
+    # --- Display continuation message on a separate screen ---
+    if block_num < NUM_BLOCKS:
+        continuation_text = "Press any key to start the next block."
+    else:
+        continuation_text = "End of experiment. Press any key to exit."
+
+    continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
+    continuation_message.draw()
+    win.flip()
+
+    # --- Wait for a key press to start the next block and send trigger ---
+    event.waitKeys()
+    if block_num < NUM_BLOCKS and p_port:
+        p_port.setData(10)
+        core.wait(0.01)
+        p_port.setData(0)
+
+    # Append block data to total data
+    trial_data.extend(block_data)
+
+# --- Save data and clean up ---
+data_folder = 'data'
+if not os.path.exists(data_folder):
+    os.makedirs(data_folder)
+filename = os.path.join(data_folder, f"participant_{expInfo['participant']}_session_{expInfo['session']}_data.csv")
+with open(filename, 'w', newline='') as csvfile:
+    fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response']
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    
+    writer.writeheader()
+    writer.writerows(trial_data)
+
+win.close()
+core.quit()

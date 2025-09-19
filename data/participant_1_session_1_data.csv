@@ -1,0 +1,5 @@
+participant,session,block_number,trial_number,trial_in_block_num,trial_type,probability_type,sequence_used,stimulus_position_num,rt_non_cumulative_s,rt_cumulative_s,correct_key_pressed,response_key_pressed,correct_response
+1,1,1,1,1,R,X,"1,2,3,4",2,2.0394217999419197,2.039431900018826,f,f,True
+1,1,1,2,2,P,X,"1,2,3,4",1,0.25136999995447695,0.25137780001387,s,s,True
+1,1,1,3,3,R,L,"1,2,3,4",4,0.3186585999792442,0.31866690004244447,l,l,True
+1,1,1,4,4,P,H,"1,2,3,4",2,0.351274500018917,0.3512832000851631,f,j,False
