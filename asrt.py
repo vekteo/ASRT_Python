@@ -137,6 +137,158 @@ def save_and_quit():
     print("Experiment terminated early. Data saved successfully.")
     win.close()
     core.quit()
+    
+# --- Instruction Window ---
+instruction_text = (
+    "Welcome to the experiment.\n\n"
+    "Your task is to catch the dog by pressing the key corresponding "
+    "to the position of the dog.\n"
+    "The possible keys are: " + ", ".join([f"'{k}'" for k in keys]) + ".\n\n"
+    
+    "You must press the correct key as quickly and accurately as possible.\n\n"
+    
+    "During the task, there will be a brief break every few minutes where we will show you your average "
+    "accuracy and reaction time, which you can use to improve your performance.\n\n"
+    
+    "Please note the key assignments:\n"
+    "Press the 's' key with the middle finger of your left hand.\n"
+    "Press the 'f' key with the index finger of your left hand.\n"
+    "Press the 'j' key with the index finger of your right hand.\n"
+    "Press the 'l' key with the middle finger of your right hand.\n\n"
+    "Press SPACE to continue."
+)
+
+instruction_message = visual.TextStim(
+    win, text=instruction_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center'
+)
+
+instruction_message.draw()
+win.flip()
+
+# Wait only for the spacebar press
+key_pressed = event.waitKeys(keyList=['space', 'escape'])
+
+if 'escape' in key_pressed:
+    save_and_quit()
+    
+# --- Mind Wandering Probe Instructions  ---
+
+if MW_TESTING_INVOLVED:
+    mw_instructions = [
+        # Page 1: General Purpose
+        (
+            "Please try to focus on the task the entire time. However, it's natural for your "
+            "thoughts to drift away from time to time.\n\n"
+            "To investigate this, we will interrupt the task a few times and ask you four questions "
+            "about whether you were focused on the task or thinking about something else.\n\n"
+            "Use the 1, 2, 3, and 4 keys to answer these questions!"
+        ),
+        # Page 2: Q1 Details (Focus)
+        (
+            "First, we will ask you to what extent you were focused on the task during the previous block.\n\n"
+            "The response options will be on a 4-point scale ranging from '1: Not focused on the task at all' "
+            "to '4: Completely focused on the task'.\n\n"
+            "The answer '1: Not at all' means that your thoughts were completely elsewhere "
+            "(e.g., you were thinking about friends, weekend plans, etc.).\n\n"
+            "The answer '4: Completely' means that you were totally focused on the task "
+            "(on where the dog's head appeared and which key you should press as fast as possible).\n\n"
+            "Select 2 or 3 if you feel your answer falls between 1 and 4."
+        ),
+        # Page 3: Q2 Details (Off-Task Content - MW branch)
+        (
+            "If you respond to the first question that you were somewhat distracted during the task, "
+            "the second question will ask if, when you were not focused on the task, you were thinking "
+            "of something specific or not thinking of anything at all.\n\n"
+            "The response options will be on a 4-point scale ranging from '1: Thinking of nothing' "
+            "to '4: Thinking of something specific'.\n\n"
+            "The answer '1: Thinking of nothing' means your thoughts drifted, but you **don't remember "
+            "anything specific**, as if your mind was completely blank.\n\n"
+            "The answer '4: Thinking of something specific' means you were thinking about "
+            "**something in particular** (e.g., a book, recent events, the task is very easy, "
+            "you are hungry, or that sitting during the task is uncomfortable).\n\n"
+            "Select 2 or 3 if you feel your answer falls between 1 and 4."
+        ),
+        # Page 4: Q3 Details (Intentionality/Spontaneous)
+        (
+            "Next, the third question will ask whether your focus (whether on the task or elsewhere) "
+            "was intentional or spontaneous.\n\n"
+            "The response options will be on a 4-point scale ranging from '1: Totally Spontaneous' "
+            "to '4: Totally Intentional'.\n\n"
+            "The answer '1: Totally Spontaneous'** means that your attention required no effort to direct. "
+            "If you were focused on the task, it happened automatically and concentration was not difficult. "
+            "If your thoughts drifted, it happened despite you wanting to focus on the task.\n\n"
+            "The answer '4: Totally Intentional' means that you consciously directed your attention. "
+            "If you were focused on the task, it was a deliberate decision and you made an effort to concentrate. "
+            "If your thoughts drifted, it was because you consciously decided to think about something else "
+            "(like the weekend), which can happen if the task bores you.\n\n"
+            "Select 2 or 3 if you feel your answer falls between 1 and 4."
+        ),
+        # Page 5: Q4 Details (Affective Tone)
+        (
+            "Following this, the fourth question will ask you if the content of your thoughts was more positive or negative.\n\n"
+            "The response options will be on a 4-point scale ranging from '1: Totally Negative' "
+            "to '4: Totally Positive'.\n\n"
+            "The answer '1: Totally Negative' means you were thinking of something particularly bad, "
+            "stressful, or anxiety-inducing (e.g., tomorrow's exam that makes you nervous).\n\n"
+            "The answer '4: Totally Positive' means you were thinking about something particularly positive "
+            "(e.g., your kitten or the delicious pizza you ate last night).\n\n"
+            "Select 2 or 3 if you feel your answer falls between 1 and 4."
+        ),
+        # Page 6: Follow-up Questions (On-Task branch)
+        (
+            "If you responded that you were completely focused on the task in the first question, "
+            "the subsequent questions will be different:\n\n"
+            "The second question will ask if you focused more on speed or accuracy.\n"
+            "Here you can choose between '1: Focused entirely on Accuracy' and '4: Focused entirely on Speed'**.\n\n"
+            "The third question will ask how difficult it was for you to concentrate on the task** "
+            "during the previous block.\n"
+            "Here you can choose between '1: Not difficult at all' and '4: Very difficult'.\n\n"
+            "The fourth question will refer to **how positive or negative your thoughts were (during brief on-task thoughts).\n"
+            "Here you can choose between '1: Totally Negative' and '4: Totally Positive'.\n\n"
+            "Select 2 or 3 in each question if you feel your answer falls between the two extremes."
+        ),
+        # Page 7: Final Note
+        (
+            "It is important to note that there are no correct or incorrect answers to these questions "
+            "and your responses will have no consequence.\n"
+            "Please answer the questions with complete sincerity.\n\n"
+            
+            "Next, there will be a 9-question quiz to verify you have correctly understood the instructions "
+            "for the probe questions.\n"
+            "If you are ready, press the SPACE button!"
+        )
+    ]
+
+    # Display instructions page by page
+    for i, page_text in enumerate(mw_instructions):
+        page_num = i + 1
+        total_pages = len(mw_instructions)
+        
+        # Add a prompt to advance or go back
+        if page_num == total_pages:
+            # Last page, different prompt
+            prompt_text = "\n\n(Press SPACE to continue to the quiz.)"
+        else:
+            prompt_text = f"\n\n(Press SPACE to continue.)"
+
+        combined_text = page_text + prompt_text
+        
+        mw_message = visual.TextStim(
+            win, text=combined_text, color='black', height=25, wrapWidth=1000, 
+            alignHoriz='center', alignVert='center'
+        )
+
+        mw_message.draw()
+        win.flip()
+
+        key_pressed = event.waitKeys(keyList=['space', 'escape'])
+
+        if 'escape' in key_pressed:
+            save_and_quit()
+            
+    # After the MW instructions (before the start window/practice loop), 
+    # you would typically insert the code for your 9-question comprehension quiz here.
+    # The quiz code is not provided, so the script proceeds to the start window.
 
 # --- Initial 'Start Experiment' window ---
 if PRACTICE_ENABLED:
