@@ -5,11 +5,14 @@ import csv
 import configparser
 import numpy as np
 import os
-from mind_wandering import show_mind_wandering_probe 
+import io # NEW: Import the I/O module for robust file reading
+# --- MODIFICATION START: Import helper functions directly from mind_wandering ---
+from mind_wandering import show_mind_wandering_probe, get_text_with_newlines, load_mw_config
 from nogo_logic import select_nogo_trials_in_block
 
-# --- GUI for Participant Info ---
-expInfo = {'participant': '1', 'session': '1'}
+# --- GUI for Participant Info (MODIFIED) ---
+# Added 'language' field for file selection
+expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
 dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
 if not dlg.OK:
     core.quit()
@@ -31,6 +34,55 @@ try:
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
     core.quit()
+
+# --- LOAD ALL EXPERIMENT TEXT (MODIFIED FOR LANGUAGE & ENCODING) ---
+language_code = expInfo['language'] # Get language code from GUI
+text_filename = f'experiment_text_{language_code}.ini' # Construct filename
+
+# Initialize text_config globally (required by helper functions)
+text_config = configparser.ConfigParser()
+
+try:
+    # Check if the specific language file exists
+    if not os.path.exists(text_filename):
+        print(f"Error: Language file '{text_filename}' not found.")
+        core.quit()
+
+    # --- FINAL ROBUST FIX: Use io.open for guaranteed UTF-8 reading ---
+    with io.open(text_filename, mode='r', encoding='utf-8') as f:
+        text_config.read_file(f)
+    # --- END FINAL ROBUST FIX ---
+    
+    if not text_config.sections():
+        raise FileNotFoundError(f"Text configuration file '{text_filename}' is empty.")
+except Exception as e:
+    print(f"Error loading experiment text file: {e}")
+    core.quit()
+
+# Initialize helper module's config using the loaded text_config
+# NOTE: This call must be modified inside mind_wandering.py to expect the filename.
+load_mw_config(filename=text_filename) 
+
+# --- The helper function 'get_text_with_newlines' definition remains here for code outside the MW module. ---
+
+def get_text_with_newlines(section, option, default=None):
+    """
+    Retrieves text from config, converts escaped newlines (\n), and provides a default
+    if the option is not found.
+    """
+    global text_config # Access the global config loaded above
+    try:
+        # We use raw=True to prevent interpolation, then use unicode_escape
+        # to correctly interpret escape sequences.
+        text_content = text_config.get(section, option, raw=True)
+        return text_content.encode().decode('unicode_escape')
+    except configparser.NoOptionError:
+        if default is not None:
+            return default
+        else:
+            # Re-raise if no default is provided and the option is missing
+            raise
+# --- END MODIFICATION ---
 
 # --- Define a list of possible sequences ---
 all_sequences = [
@@ -139,24 +191,8 @@ def save_and_quit():
     core.quit()
     
 # --- Instruction Window ---
-instruction_text = (
-    "Welcome to the experiment.\n\n"
-    "Your task is to catch the dog by pressing the key corresponding "
-    "to the position of the dog.\n"
-    "The possible keys are: " + ", ".join([f"'{k}'" for k in keys]) + ".\n\n"
-    
-    "You must press the correct key as quickly and accurately as possible.\n\n"
-    
-    "During the task, there will be a brief break every few minutes where we will show you your average "
-    "accuracy and reaction time, which you can use to improve your performance.\n\n"
-    
-    "Please note the key assignments:\n"
-    "Press the 's' key with the middle finger of your left hand.\n"
-    "Press the 'f' key with the index finger of your left hand.\n"
-    "Press the 'j' key with the index finger of your right hand.\n"
-    "Press the 'l' key with the middle finger of your right hand.\n\n"
-    "Press SPACE to continue."
-)
+keys_list_str = ", ".join([f"'{k}'" for k in keys])
+instruction_text = get_text_with_newlines('Instructions', 'welcome_screen').format(keys_list=keys_list_str)
 
 instruction_message = visual.TextStim(
     win, text=instruction_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center'
@@ -175,88 +211,13 @@ if 'escape' in key_pressed:
 
 if MW_TESTING_INVOLVED:
     mw_instructions = [
-        # Page 1: General Purpose
-        (
-            "Please try to focus on the task the entire time. However, it's natural for your "
-            "thoughts to drift away from time to time.\n\n"
-            "To investigate this, we will interrupt the task a few times and ask you four questions "
-            "about whether you were focused on the task or thinking about something else.\n\n"
-            "Use the 1, 2, 3, and 4 keys to answer these questions!"
-        ),
-        # Page 2: Q1 Details (Focus)
-        (
-            "First, we will ask you to what extent you were focused on the task during the previous block.\n\n"
-            "The response options will be on a 4-point scale ranging from '1: Not focused on the task at all' "
-            "to '4: Completely focused on the task'.\n\n"
-            "The answer '1: Not at all' means that your thoughts were completely elsewhere "
-            "(e.g., you were thinking about friends, weekend plans, etc.).\n\n"
-            "The answer '4: Completely' means that you were totally focused on the task "
-            "(on where the dog's head appeared and which key you should press as fast as possible).\n\n"
-            "Select 2 or 3 if you feel your answer falls between 1 and 4."
-        ),
-        # Page 3: Q2 Details (Off-Task Content - MW branch)
-        (
-            "If you respond to the first question that you were somewhat distracted during the task, "
-            "the second question will ask if, when you were not focused on the task, you were thinking "
-            "of something specific or not thinking of anything at all.\n\n"
-            "The response options will be on a 4-point scale ranging from '1: Thinking of nothing' "
-            "to '4: Thinking of something specific'.\n\n"
-            "The answer '1: Thinking of nothing' means your thoughts drifted, but you **don't remember "
-            "anything specific**, as if your mind was completely blank.\n\n"
-            "The answer '4: Thinking of something specific' means you were thinking about "
-            "**something in particular** (e.g., a book, recent events, the task is very easy, "
-            "you are hungry, or that sitting during the task is uncomfortable).\n\n"
-            "Select 2 or 3 if you feel your answer falls between 1 and 4."
-        ),
-        # Page 4: Q3 Details (Intentionality/Spontaneous)
-        (
-            "Next, the third question will ask whether your focus (whether on the task or elsewhere) "
-            "was intentional or spontaneous.\n\n"
-            "The response options will be on a 4-point scale ranging from '1: Totally Spontaneous' "
-            "to '4: Totally Intentional'.\n\n"
-            "The answer '1: Totally Spontaneous'** means that your attention required no effort to direct. "
-            "If you were focused on the task, it happened automatically and concentration was not difficult. "
-            "If your thoughts drifted, it happened despite you wanting to focus on the task.\n\n"
-            "The answer '4: Totally Intentional' means that you consciously directed your attention. "
-            "If you were focused on the task, it was a deliberate decision and you made an effort to concentrate. "
-            "If your thoughts drifted, it was because you consciously decided to think about something else "
-            "(like the weekend), which can happen if the task bores you.\n\n"
-            "Select 2 or 3 if you feel your answer falls between 1 and 4."
-        ),
-        # Page 5: Q4 Details (Affective Tone)
-        (
-            "Following this, the fourth question will ask you if the content of your thoughts was more positive or negative.\n\n"
-            "The response options will be on a 4-point scale ranging from '1: Totally Negative' "
-            "to '4: Totally Positive'.\n\n"
-            "The answer '1: Totally Negative' means you were thinking of something particularly bad, "
-            "stressful, or anxiety-inducing (e.g., tomorrow's exam that makes you nervous).\n\n"
-            "The answer '4: Totally Positive' means you were thinking about something particularly positive "
-            "(e.g., your kitten or the delicious pizza you ate last night).\n\n"
-            "Select 2 or 3 if you feel your answer falls between 1 and 4."
-        ),
-        # Page 6: Follow-up Questions (On-Task branch)
-        (
-            "If you responded that you were completely focused on the task in the first question, "
-            "the subsequent questions will be different:\n\n"
-            "The second question will ask if you focused more on speed or accuracy.\n"
-            "Here you can choose between '1: Focused entirely on Accuracy' and '4: Focused entirely on Speed'**.\n\n"
-            "The third question will ask how difficult it was for you to concentrate on the task** "
-            "during the previous block.\n"
-            "Here you can choose between '1: Not difficult at all' and '4: Very difficult'.\n\n"
-            "The fourth question will refer to **how positive or negative your thoughts were (during brief on-task thoughts).\n"
-            "Here you can choose between '1: Totally Negative' and '4: Totally Positive'.\n\n"
-            "Select 2 or 3 in each question if you feel your answer falls between the two extremes."
-        ),
-        # Page 7: Final Note
-        (
-            "It is important to note that there are no correct or incorrect answers to these questions "
-            "and your responses will have no consequence.\n"
-            "Please answer the questions with complete sincerity.\n\n"
-            
-            "Next, there will be a 9-question quiz to verify you have correctly understood the instructions "
-            "for the probe questions.\n"
-            "If you are ready, press the SPACE button!"
-        )
+        get_text_with_newlines('MW_Probes', 'mw_intro'),
+        get_text_with_newlines('MW_Probes', 'mw_q1'),
+        get_text_with_newlines('MW_Probes', 'mw_q2_off_task'),
+        get_text_with_newlines('MW_Probes', 'mw_q3_spontaneous'),
+        get_text_with_newlines('MW_Probes', 'mw_q4_affective'),
+        get_text_with_newlines('MW_Probes', 'mw_on_task_follow_up'),
+        get_text_with_newlines('MW_Probes', 'mw_final_note')
     ]
 
     # Display instructions page by page
@@ -266,12 +227,14 @@ if MW_TESTING_INVOLVED:
         
         # Add a prompt to advance or go back
         if page_num == total_pages:
-            # Last page, different prompt
-            prompt_text = "\n\n(Press SPACE to continue to the quiz.)"
+            default_quiz_prompt = "(Press SPACE to continue to the quiz.)"
+            prompt_text = get_text_with_newlines('Screens', 'prompt_quiz', default=default_quiz_prompt)
         else:
-            prompt_text = f"\n\n(Press SPACE to continue.)"
+            default_continue_prompt = "(Presione ESPACIO para continuar.)"
+            prompt_text = get_text_with_newlines('Screens', 'prompt_continue', default=default_continue_prompt)
 
-        combined_text = page_text + prompt_text
+        # Using string concatenation to re-add the necessary newlines for spacing.
+        combined_text = page_text + "\n\n" + prompt_text.strip()
         
         mw_message = visual.TextStim(
             win, text=combined_text, color='black', height=25, wrapWidth=1000, 
@@ -286,16 +249,13 @@ if MW_TESTING_INVOLVED:
         if 'escape' in key_pressed:
             save_and_quit()
             
-    # After the MW instructions (before the start window/practice loop), 
-    # you would typically insert the code for your 9-question comprehension quiz here.
-    # The quiz code is not provided, so the script proceeds to the start window.
-
 # --- Initial 'Start Experiment' window ---
 if PRACTICE_ENABLED:
-    start_text = f"Practice blocks are enabled. Press any key to start the {NUM_PRACTICE_BLOCKS} practice blocks."
+    # Use .format() to insert the variable number of blocks
+    start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
     start_trigger_value = 81
 else:
-    start_text = "Press any key to start the experiment."
+    start_text = get_text_with_newlines('Screens', 'start_main')
     start_trigger_value = 11
 
 start_message = visual.TextStim(win, text=start_text, color='black', height=40, wrapWidth=1000)
@@ -402,7 +362,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             core.wait(0.01)
             p_port.setData(0)
         else:
-            print(f"Faking parallel port trigger: {trial_trigger}")
+            print(f"Faking parallel port trigger: {trigger_value}")
         print(f"Trial {total_trial_count} onset trigger: {trial_trigger} (Type: {trial_type}, Pos: {target_stim_pos}, Prob: {probability_type})")
 
         cumulative_timer = core.Clock()
@@ -598,16 +558,17 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
     
     if accuracy < 90:
-        performance_message = "Please try to be more accurate."
+        performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
         performance_color = 'red'
     elif mean_rt > 0.350:
-        performance_message = "Please try to be faster."
+        performance_message = get_text_with_newlines('Screens', 'feedback_faster')
         performance_color = 'red'
     else:
-        performance_message = "Good job."
+        performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
         performance_color = 'green'
 
-    feedback_header_text = f"End of Practice Block {practice_block_num} feedback:"
+    # Use .format() for dynamic block number
+    feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
     feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
     
     feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000)
@@ -630,7 +591,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     core.wait(3)
 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
-        continuation_text = "Press any key to start the next practice block."
+        continuation_text = get_text_with_newlines('Screens', 'next_practice')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
         win.flip()
         continuation_message.draw()
@@ -648,7 +609,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             print(f"Faking parallel port trigger: {trigger_base + (practice_block_num + 1)}")
     
 if PRACTICE_ENABLED:
-    end_practice_text = "Practice is complete. Press any key to start the main experiment."
+    end_practice_text = get_text_with_newlines('Screens', 'end_practice')
     end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000)
     
     win.flip()
@@ -679,6 +640,23 @@ for block_num in range(1, NUM_BLOCKS + 1):
             current_pattern_sequence.reverse()
     elif current_pattern_sequence != list(pattern_sequence) and epoch != INTERFERENCE_EPOCH_NUM:
         current_pattern_sequence = list(pattern_sequence)
+    
+    # --- FIX: Generate and shuffle the random trial positions once per block ---
+    
+    num_random_trials = TRIALS_PER_BLOCK - (TRIALS_PER_BLOCK // 2)
+
+    random_positions_list = []
+    positions_per_stim = num_random_trials // len(stimuli)
+    
+    if num_random_trials % len(stimuli) != 0:
+        print("Warning: Number of random trials is not evenly divisible by number of stimuli. Random positions won't be perfectly counterbalanced.")
+
+    for pos_num in range(1, len(stimuli) + 1):
+        random_positions_list.extend([pos_num] * positions_per_stim)
+        
+    random.shuffle(random_positions_list)
+    
+    # --- END FIX ---
 
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
@@ -723,19 +701,14 @@ for block_num in range(1, NUM_BLOCKS + 1):
         core.wait(0.120)
 
         if trial_in_block_num % 2 == 0:
+            # Pattern trial (Even trial number)
             target_stim_pos = current_pattern_sequence[pattern_index]
             pattern_index = (pattern_index + 1) % len(current_pattern_sequence)
             trial_type = 'P'
         else:
-            random_positions_list = []
-            num_random_trials = TRIALS_PER_BLOCK // 2
-            positions_per_stim = num_random_trials // len(stimuli)
-            for pos_num in range(1, len(stimuli) + 1):
-                random_positions_list.extend([pos_num] * positions_per_stim)
-            random.shuffle(random_positions_list)
-            
+            # Random trial (Odd trial number)
             target_stim_pos = random_positions_list[random_list_index]
-            random_list_index = (random_list_index + 1) % len(random_positions_list)
+            random_list_index += 1
             trial_type = 'R'
 
         probability_type = 'L'
@@ -1015,16 +988,16 @@ for block_num in range(1, NUM_BLOCKS + 1):
     accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
     
     if accuracy < 90:
-        performance_message = "Please try to be more accurate."
+        performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
         performance_color = 'red'
     elif mean_rt > 0.350:
-        performance_message = "Please try to be faster."
+        performance_message = get_text_with_newlines('Screens', 'feedback_faster')
         performance_color = 'red'
     else:
-        performance_message = "Good job."
+        performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
         performance_color = 'green'
 
-    feedback_header_text = f"End of block {block_num} feedback:"
+    feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
     feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
     
     feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000)
@@ -1047,7 +1020,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
     core.wait(3)
 
     if block_num < NUM_BLOCKS:
-        continuation_text = "Press any key to start the next block."
+        continuation_text = get_text_with_newlines('Screens', 'next_main')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
         win.flip()
         continuation_message.draw()
@@ -1066,7 +1039,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
 
 # --- End of Experiment message ---
 print("Data saved successfully.")
-end_text = "End of experiment. Press any key to exit."
+end_text = get_text_with_newlines('Screens', 'end_experiment')
 end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000)
 end_message.draw()
 win.flip()
