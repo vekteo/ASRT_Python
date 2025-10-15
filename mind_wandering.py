@@ -27,45 +27,52 @@ def get_text_with_newlines(section, option, default=None):
         else:
             raise
 
+import configparser
+import os
+import io 
+
 # Global variable to store the text configuration once loaded
 MW_TEXT_CONFIG = None
-MW_CONFIG_FILENAME = None # Placeholder for dynamic filename
+MW_CONFIG_FILENAME = None 
 
-# ... (other helper functions like get_text_with_newlines remain above)
+# ... (get_text_with_newlines function relies on MW_TEXT_CONFIG)
 
 def load_mw_config(filename=None):
     """
-    Loads the experiment_text.ini file for use within this module, supporting
-    dynamic filename and explicitly forcing UTF-8 encoding.
+    Loads the experiment_text.ini file for use within this module, using robust
+    UTF-8 encoding and manually cleaning the stream to remove the BOM/header issues.
     """
     global MW_TEXT_CONFIG, MW_CONFIG_FILENAME
     
-    # Store the filename if one is passed (from the main script)
     if filename:
         MW_CONFIG_FILENAME = filename 
         
-    # Only proceed if we have a filename
     load_filename = MW_CONFIG_FILENAME
     if not load_filename:
-        # Fallback if the script runs without the main script passing a filename
         load_filename = 'experiment_text.ini'
         
-    if MW_TEXT_CONFIG is None or filename: # Reload if needed
+    if MW_TEXT_CONFIG is None or filename: 
         MW_TEXT_CONFIG = configparser.ConfigParser()
-        
         try:
-            # Explicitly open the file with UTF-8 and pass the file object to read
             if os.path.exists(load_filename):
-                # Use standard open function with encoding='utf-8'
-                with open(load_filename, 'r', encoding='utf-8') as f:
-                    MW_TEXT_CONFIG.read_file(f)
+                
+                # 1. Read the raw file content using the BOM-aware UTF-8 encoding
+                with io.open(load_filename, mode='r', encoding='utf-8-sig') as f:
+                    file_content = f.read()
+
+                # 2. CRITICAL CLEANING STEP: Remove BOM and excessive leading whitespace/newlines
+                # The BOM is already removed by 'utf-8-sig', but we clean any other stray characters
+                # and ensure the content starts with the first header.
+                file_content = file_content.strip() 
+
+                # 3. Feed the cleaned content into configparser using read_string
+                MW_TEXT_CONFIG.read_string(file_content)
             
-            if not MW_TEXT_CONFIG.sections():
-                print(f"Warning: mind_wandering.py loaded an empty or missing sections in {load_filename}.")
         except Exception as e:
+            # We don't raise NoSectionError here; if it's truly empty, the error will surface later.
             print(f"Error loading config in mind_wandering.py ({load_filename}): {e}")
 
-# ... (rest of mind_wandering.py continues)
+# ... (rest of mind_wandering.py)
             
 def show_mind_wandering_probe(win, mw_testing_involved, na_mw_rating, save_and_quit_func):
     """

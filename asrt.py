@@ -5,13 +5,11 @@ import csv
 import configparser
 import numpy as np
 import os
-import io # NEW: Import the I/O module for robust file reading
-# --- MODIFICATION START: Import helper functions directly from mind_wandering ---
+import io
 from mind_wandering import show_mind_wandering_probe, get_text_with_newlines, load_mw_config
 from nogo_logic import select_nogo_trials_in_block
 
-# --- GUI for Participant Info (MODIFIED) ---
-# Added 'language' field for file selection
+# --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
 dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
 if not dlg.OK:
@@ -35,7 +33,7 @@ except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
     core.quit()
 
-# --- LOAD ALL EXPERIMENT TEXT (MODIFIED FOR LANGUAGE & ENCODING) ---
+# --- LOAD ALL EXPERIMENT TEXT ---
 language_code = expInfo['language'] # Get language code from GUI
 text_filename = f'experiment_text_{language_code}.ini' # Construct filename
 
@@ -48,13 +46,18 @@ try:
         print(f"Error: Language file '{text_filename}' not found.")
         core.quit()
 
-    # --- FINAL ROBUST FIX: Use io.open for guaranteed UTF-8 reading ---
-    with io.open(text_filename, mode='r', encoding='utf-8') as f:
-        text_config.read_file(f)
-    # --- END FINAL ROBUST FIX ---
+    # --- MANUAL CLEANING FOR MAIN SCRIPT ---
+    with io.open(text_filename, mode='r', encoding='utf-8-sig') as f:
+        file_content = f.read()
+
+    file_content = file_content.strip()
+    text_config.read_string(file_content)
+    # --- END MANUAL CLEANING ---
     
     if not text_config.sections():
         raise FileNotFoundError(f"Text configuration file '{text_filename}' is empty.")
+# ... (rest of asrt.py continues)
+        
 except Exception as e:
     print(f"Error loading experiment text file: {e}")
     core.quit()
@@ -82,7 +85,6 @@ def get_text_with_newlines(section, option, default=None):
         else:
             # Re-raise if no default is provided and the option is missing
             raise
-# --- END MODIFICATION ---
 
 # --- Define a list of possible sequences ---
 all_sequences = [
