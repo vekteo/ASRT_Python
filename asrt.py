@@ -7,11 +7,8 @@ import numpy as np
 import os
 import io 
 from nogo_logic import select_nogo_trials_in_block
-
-# --- Import helper functions from external files ---
 from mind_wandering import show_mind_wandering_probe, load_mw_config
 from quiz_logic import run_comprehension_quiz
-
 
 # --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
@@ -30,7 +27,6 @@ try:
     NO_GO_TRIALS_ENABLED = config.getboolean('Experiment', 'no_go_trials_enabled')
     NUM_NO_GO_TRIALS = config.getint('Experiment', 'num_no_go_trials')
     MW_TESTING_INVOLVED = config.getboolean('Experiment', 'mw_testing_involved')
-    # Load the optional quiz setting
     RUN_COMPREHENSION_QUIZ = config.getboolean('Experiment', 'run_quiz_if_mw_enabled')
     PRACTICE_ENABLED = config.getboolean('Practice', 'practice_enabled')
     NUM_PRACTICE_BLOCKS = config.getint('Practice', 'num_practice_blocks')
@@ -50,7 +46,6 @@ try:
         print(f"Error: Language file '{text_filename}' not found.")
         core.quit()
 
-    # CRITICAL FIX: Use io.open with 'utf-8-sig' to handle BOM/accents robustly
     with io.open(text_filename, mode='r', encoding='utf-8-sig') as f:
         file_content = f.read()
     
@@ -97,7 +92,7 @@ pattern_sequence = all_sequences[sequence_index]
 # Convert the selected pattern sequence to a string for easy saving
 sequence_to_save = str(pattern_sequence).replace('[', '').replace(']', '').replace(' ', '')
 
-# --- Setup the PsychoPy window and stimuli (CRITICAL FIXES HERE) ---
+# --- Setup the PsychoPy window and stimuli ---
 win = visual.Window(
     size=[1920, 1080],
     fullscr=True,
@@ -105,8 +100,7 @@ win = visual.Window(
     units="pix",
     color='white',
     multiSample=True,
-    numSamples=16,
-    useFBO=True # CRITICAL FIX for accent rendering stability
+    numSamples=16
 )
 
 # --- Define image paths ---
@@ -199,7 +193,7 @@ key_pressed = event.waitKeys(keyList=['space', 'escape'])
 if 'escape' in key_pressed:
     save_and_quit()
     
-# --- Mind Wandering Probe Instructions (MADE OPTIONAL) ---
+# --- Mind Wandering Probe Instructions ---
 
 if MW_TESTING_INVOLVED:
     mw_instructions = [
@@ -291,7 +285,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         block_indices = range(len(pre_block_trials))
         
         try:
-            # CALL TO EXTERNAL FUNCTION
             nogo_indices_in_block_relative = select_nogo_trials_in_block(block_indices, pre_block_trials, num_nogo_p_per_block, num_nogo_r_per_block)
             nogo_trial_indices_in_block.update(nogo_indices_in_block_relative)
         except (ValueError, RuntimeError) as e:
@@ -639,8 +632,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
     elif current_pattern_sequence != list(pattern_sequence) and epoch != INTERFERENCE_EPOCH_NUM:
         current_pattern_sequence = list(pattern_sequence)
     
-    # --- FIX: Generate and shuffle the random trial positions once per block ---
-    
     num_random_trials = TRIALS_PER_BLOCK - (TRIALS_PER_BLOCK // 2)
 
     random_positions_list = []
@@ -654,8 +645,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
         
     random.shuffle(random_positions_list)
     
-    # --- END FIX ---
-
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
         num_nogo_per_block = NUM_NO_GO_TRIALS
