@@ -5,9 +5,13 @@ import csv
 import configparser
 import numpy as np
 import os
-import io
-from mind_wandering import show_mind_wandering_probe, get_text_with_newlines, load_mw_config
+import io 
 from nogo_logic import select_nogo_trials_in_block
+
+# --- Import helper functions from external files ---
+from mind_wandering import show_mind_wandering_probe, load_mw_config
+from quiz_logic import run_comprehension_quiz
+
 
 # --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
@@ -26,6 +30,8 @@ try:
     NO_GO_TRIALS_ENABLED = config.getboolean('Experiment', 'no_go_trials_enabled')
     NUM_NO_GO_TRIALS = config.getint('Experiment', 'num_no_go_trials')
     MW_TESTING_INVOLVED = config.getboolean('Experiment', 'mw_testing_involved')
+    # Load the optional quiz setting
+    RUN_COMPREHENSION_QUIZ = config.getboolean('Experiment', 'run_quiz_if_mw_enabled')
     PRACTICE_ENABLED = config.getboolean('Practice', 'practice_enabled')
     NUM_PRACTICE_BLOCKS = config.getint('Practice', 'num_practice_blocks')
     
@@ -34,56 +40,43 @@ except (configparser.Error, FileNotFoundError) as e:
     core.quit()
 
 # --- LOAD ALL EXPERIMENT TEXT ---
-language_code = expInfo['language'] # Get language code from GUI
-text_filename = f'experiment_text_{language_code}.ini' # Construct filename
+language_code = expInfo['language'] 
+text_filename = f'experiment_text_{language_code}.ini' 
 
-# Initialize text_config globally (required by helper functions)
 text_config = configparser.ConfigParser()
 
 try:
-    # Check if the specific language file exists
     if not os.path.exists(text_filename):
         print(f"Error: Language file '{text_filename}' not found.")
         core.quit()
 
-    # --- MANUAL CLEANING FOR MAIN SCRIPT ---
+    # CRITICAL FIX: Use io.open with 'utf-8-sig' to handle BOM/accents robustly
     with io.open(text_filename, mode='r', encoding='utf-8-sig') as f:
         file_content = f.read()
-
+    
     file_content = file_content.strip()
     text_config.read_string(file_content)
-    # --- END MANUAL CLEANING ---
     
     if not text_config.sections():
         raise FileNotFoundError(f"Text configuration file '{text_filename}' is empty.")
-# ... (rest of asrt.py continues)
-        
 except Exception as e:
     print(f"Error loading experiment text file: {e}")
     core.quit()
 
-# Initialize helper module's config using the loaded text_config
-# NOTE: This call must be modified inside mind_wandering.py to expect the filename.
+# Initialize helper module's config with the filename
 load_mw_config(filename=text_filename) 
 
-# --- The helper function 'get_text_with_newlines' definition remains here for code outside the MW module. ---
-
+# --- HELPER FUNCTION DEFINED IN MAIN SCRIPT (for Instructions and Screens text) ---
 def get_text_with_newlines(section, option, default=None):
-    """
-    Retrieves text from config, converts escaped newlines (\n), and provides a default
-    if the option is not found.
-    """
-    global text_config # Access the global config loaded above
+    """Retrieves text and handles escape sequences for display in the main script."""
+    global text_config 
     try:
-        # We use raw=True to prevent interpolation, then use unicode_escape
-        # to correctly interpret escape sequences.
         text_content = text_config.get(section, option, raw=True)
         return text_content.encode().decode('unicode_escape')
     except configparser.NoOptionError:
         if default is not None:
             return default
         else:
-            # Re-raise if no default is provided and the option is missing
             raise
 
 # --- Define a list of possible sequences ---
@@ -104,7 +97,7 @@ pattern_sequence = all_sequences[sequence_index]
 # Convert the selected pattern sequence to a string for easy saving
 sequence_to_save = str(pattern_sequence).replace('[', '').replace(']', '').replace(' ', '')
 
-# --- Setup the PsychoPy window and stimuli ---
+# --- Setup the PsychoPy window and stimuli (CRITICAL FIXES HERE) ---
 win = visual.Window(
     size=[1920, 1080],
     fullscr=True,
@@ -112,7 +105,8 @@ win = visual.Window(
     units="pix",
     color='white',
     multiSample=True,
-    numSamples=16
+    numSamples=16,
+    useFBO=True # CRITICAL FIX for accent rendering stability
 )
 
 # --- Define image paths ---
@@ -139,18 +133,16 @@ for x, key in zip(x_positions, keys):
     stimuli.append({'stim': circle, 'key': key})
 
 # State variables for the experiment
-all_data = [] # To save all trial data cumulatively
+all_data = [] 
 total_trial_count = 0
 header_written = False
-NA_MW_RATING = 'NA' # Default value for mind wandering rating when not collected
+NA_MW_RATING = 'NA' 
 
 # --- Initialize Parallel Port for Triggers ---
-
 p_port = None
 try:
-    # Use the standard LPT1 address for the parallel port
     p_port = parallel.ParallelPort(address='0x0378') 
-    p_port.setData(0) # Clear all pins on initialization
+    p_port.setData(0)
     print(f"Parallel port initialized at address 0x0378.")
 except Exception as e:
     print(f"Parallel port not found or could not be initialized. Error: {e}")
@@ -164,8 +156,6 @@ def send_trigger_pulse(trigger_value, pulse_duration=0.01):
         p_port.setData(trigger_value)
         core.wait(pulse_duration)
         p_port.setData(0)
-        # Note: BrainProducts trigger boxes usually require the reset to 0
-        # immediately after the pulse for proper recording.
     else:
         print(f"Faking parallel port trigger: {trigger_value}")
 
@@ -191,13 +181,13 @@ def save_and_quit():
     print("Experiment terminated early. Data saved successfully.")
     win.close()
     core.quit()
-    
+
 # --- Instruction Window ---
 keys_list_str = ", ".join([f"'{k}'" for k in keys])
 instruction_text = get_text_with_newlines('Instructions', 'welcome_screen').format(keys_list=keys_list_str)
 
 instruction_message = visual.TextStim(
-    win, text=instruction_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center'
+    win, text=instruction_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center', font='Arial'
 )
 
 instruction_message.draw()
@@ -209,7 +199,7 @@ key_pressed = event.waitKeys(keyList=['space', 'escape'])
 if 'escape' in key_pressed:
     save_and_quit()
     
-# --- Mind Wandering Probe Instructions  ---
+# --- Mind Wandering Probe Instructions (MADE OPTIONAL) ---
 
 if MW_TESTING_INVOLVED:
     mw_instructions = [
@@ -222,25 +212,29 @@ if MW_TESTING_INVOLVED:
         get_text_with_newlines('MW_Probes', 'mw_final_note')
     ]
 
-    # Display instructions page by page
     for i, page_text in enumerate(mw_instructions):
         page_num = i + 1
         total_pages = len(mw_instructions)
         
-        # Add a prompt to advance or go back
         if page_num == total_pages:
-            default_quiz_prompt = "(Press SPACE to continue to the quiz.)"
-            prompt_text = get_text_with_newlines('Screens', 'prompt_quiz', default=default_quiz_prompt)
+            # Gating prompt text based on whether the quiz is enabled
+            if not RUN_COMPREHENSION_QUIZ:
+                 prompt_key = 'prompt_continue'
+                 default_quiz_prompt = "(Press SPACE to continue to the main task.)"
+            else:
+                 prompt_key = 'prompt_quiz'
+                 default_quiz_prompt = "(Press SPACE to continue to the quiz.)"
+                 
+            prompt_text = get_text_with_newlines('Screens', prompt_key, default=default_quiz_prompt)
         else:
-            default_continue_prompt = "(Presione ESPACIO para continuar.)"
+            default_continue_prompt = "(Press SPACE to continue.)"
             prompt_text = get_text_with_newlines('Screens', 'prompt_continue', default=default_continue_prompt)
 
-        # Using string concatenation to re-add the necessary newlines for spacing.
         combined_text = page_text + "\n\n" + prompt_text.strip()
         
         mw_message = visual.TextStim(
             win, text=combined_text, color='black', height=25, wrapWidth=1000, 
-            alignHoriz='center', alignVert='center'
+            alignHoriz='center', alignVert='center', font='Arial'
         )
 
         mw_message.draw()
@@ -251,16 +245,20 @@ if MW_TESTING_INVOLVED:
         if 'escape' in key_pressed:
             save_and_quit()
             
+    # --- Quiz Implementation (Gated by Setting) ---
+    if RUN_COMPREHENSION_QUIZ:
+        # Run the quiz only if MW is involved AND the quiz is explicitly enabled
+        run_comprehension_quiz(win, save_and_quit, text_filename) 
+
 # --- Initial 'Start Experiment' window ---
 if PRACTICE_ENABLED:
-    # Use .format() to insert the variable number of blocks
     start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
     start_trigger_value = 81
 else:
     start_text = get_text_with_newlines('Screens', 'start_main')
     start_trigger_value = 11
 
-start_message = visual.TextStim(win, text=start_text, color='black', height=40, wrapWidth=1000)
+start_message = visual.TextStim(win, text=start_text, color='black', height=40, wrapWidth=1000, font='Arial')
 start_message.draw()
 win.flip()
 
@@ -278,7 +276,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     pos_minus_1 = None
     pos_minus_2 = None
     
-    # ... (No-Go trial selection logic for practice blocks remains the same)
+    # ... (No-Go trial selection logic remains the same)
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
         num_nogo_per_block = NUM_NO_GO_TRIALS
@@ -364,7 +362,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             core.wait(0.01)
             p_port.setData(0)
         else:
-            print(f"Faking parallel port trigger: {trigger_value}")
+            print(f"Faking parallel port trigger: {trial_trigger}")
         print(f"Trial {total_trial_count} onset trigger: {trial_trigger} (Type: {trial_type}, Pos: {target_stim_pos}, Prob: {probability_type})")
 
         cumulative_timer = core.Clock()
@@ -418,7 +416,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': True,
                         'is_practice': True,
                         'epoch': 0,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -444,7 +442,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': True,
                         'is_practice': True,
                         'epoch': 0,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -509,7 +507,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': False,
                         'is_practice': True,
                         'epoch': 0,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -526,7 +524,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     # --- Mind Wandering Probe for Practice Block ---
     mw_ratings = show_mind_wandering_probe(win, MW_TESTING_INVOLVED, NA_MW_RATING, save_and_quit)
     
-    # Update all collected trial data for this block with the MW ratings
     for d in block_data:
         d['mind_wandering_rating_1'] = mw_ratings[0]
         d['mind_wandering_rating_2'] = mw_ratings[1]
@@ -569,13 +566,12 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
         performance_color = 'green'
 
-    # Use .format() for dynamic block number
     feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
     feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
     
-    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000)
-    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000)
-    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000)
+    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
+    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
+    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
     
     win.flip()
     feedback_header.draw()
@@ -594,7 +590,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_practice')
-        continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
+        continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
         win.flip()
         continuation_message.draw()
         win.flip()
@@ -612,7 +608,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     
 if PRACTICE_ENABLED:
     end_practice_text = get_text_with_newlines('Screens', 'end_practice')
-    end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000)
+    end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000, font='Arial')
     
     win.flip()
     end_practice_message.draw()
@@ -848,7 +844,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': True,
                         'is_practice': False,
                         'epoch': epoch,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -874,7 +870,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': True,
                         'is_practice': False,
                         'epoch': epoch,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -939,7 +935,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': False,
                         'is_practice': False,
                         'epoch': epoch,
-                        'mind_wandering_rating_1': na_ratings[0], # Initialized with NA
+                        'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
@@ -956,7 +952,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
     # --- Mind Wandering Probe for Main Block ---
     mw_ratings = show_mind_wandering_probe(win, MW_TESTING_INVOLVED, NA_MW_RATING, save_and_quit)
     
-    # Update all collected trial data for this block with the MW ratings
     for d in block_data:
         d['mind_wandering_rating_1'] = mw_ratings[0]
         d['mind_wandering_rating_2'] = mw_ratings[1]
@@ -1002,9 +997,9 @@ for block_num in range(1, NUM_BLOCKS + 1):
     feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
     feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
     
-    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000)
-    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000)
-    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000)
+    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
+    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
+    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
     
     win.flip()
     feedback_header.draw()
@@ -1023,7 +1018,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
 
     if block_num < NUM_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_main')
-        continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000)
+        continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
         win.flip()
         continuation_message.draw()
         win.flip()
@@ -1042,7 +1037,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
 # --- End of Experiment message ---
 print("Data saved successfully.")
 end_text = get_text_with_newlines('Screens', 'end_experiment')
-end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000)
+end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000, font='Arial')
 end_message.draw()
 win.flip()
 event.waitKeys()
