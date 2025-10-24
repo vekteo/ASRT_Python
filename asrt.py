@@ -9,6 +9,7 @@ import io
 from nogo_logic import select_nogo_trials_in_block
 from mind_wandering import show_mind_wandering_probe, load_mw_config
 from quiz_logic import run_comprehension_quiz
+from config_helpers import get_text_with_newlines, set_global_text_config 
 
 # --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
@@ -30,6 +31,22 @@ try:
     RUN_COMPREHENSION_QUIZ = config.getboolean('Experiment', 'run_quiz_if_mw_enabled')
     PRACTICE_ENABLED = config.getboolean('Practice', 'practice_enabled')
     NUM_PRACTICE_BLOCKS = config.getint('Practice', 'num_practice_blocks')
+    
+    # Read dynamic timing and feedback settings
+    ISI_DURATION = config.getfloat('Experiment', 'isi_duration_s')
+    NOGO_TRIAL_DURATION = config.getfloat('Experiment', 'nogo_trial_duration_s')
+    FEEDBACK_ENABLED = config.getboolean('Experiment', 'feedback_enabled')
+    
+    # NEW: Read dynamic stimuli settings
+    KEYS_STR = config.get('Experiment', 'response_keys_list')
+    keys = [k.strip() for k in KEYS_STR.split(',')] # Parse string into list
+    target_image_path = config.get('Experiment', 'target_image_filename')
+    nogo_image_path = config.get('Experiment', 'nogo_image_filename')
+
+    # Validation check for keys
+    if len(keys) != 4:
+         print("Error: The 'response_keys_list' in settings must contain exactly 4 keys (comma-separated).")
+         core.quit()
     
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
@@ -60,19 +77,7 @@ except Exception as e:
 
 # Initialize helper module's config with the filename
 load_mw_config(filename=text_filename) 
-
-# --- HELPER FUNCTION DEFINED IN MAIN SCRIPT (for Instructions and Screens text) ---
-def get_text_with_newlines(section, option, default=None):
-    """Retrieves text and handles escape sequences for display in the main script."""
-    global text_config 
-    try:
-        text_content = text_config.get(section, option, raw=True)
-        return text_content.encode().decode('unicode_escape')
-    except configparser.NoOptionError:
-        if default is not None:
-            return default
-        else:
-            raise
+set_global_text_config(text_config)
 
 # --- Define a list of possible sequences ---
 all_sequences = [
@@ -104,8 +109,9 @@ win = visual.Window(
 )
 
 # --- Define image paths ---
-target_image_path = 'target_image.png' 
-nogo_image_path = 'nogo_image.png'
+# Paths are now read from settings and defined above.
+# target_image_path = 'target_image.png' 
+# nogo_image_path = 'nogo_image.png'
 
 # Define stimulus properties
 circle_radius = 60
@@ -114,7 +120,7 @@ x_positions = [-240, -80, 80, 240]
 
 # Create circle stimuli and their corresponding keys
 stimuli = []
-keys = ['s', 'f', 'j', 'l']
+# keys = ['s', 'f', 'j', 'l'] # Keys are now read from settings
 for x, key in zip(x_positions, keys):
     circle = visual.Circle(
         win=win,
@@ -314,7 +320,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         for stim_dict in stimuli:
             stim_dict['stim'].draw()
         win.flip()
-        core.wait(0.120)
+        core.wait(ISI_DURATION) 
 
         target_stim_pos = practice_positions_list[practice_list_index]
         practice_list_index += 1
@@ -363,7 +369,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         if is_nogo:
             response_logged = False
             
-            while cumulative_timer.getTime() < 1.0:
+            while cumulative_timer.getTime() < NOGO_TRIAL_DURATION:
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
                 border_circle.draw()
@@ -542,44 +548,45 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     print(f"Data for Practice Block {practice_block_num} saved successfully.")
 
     # --- Display feedback for 3 seconds ---
-    correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
-    total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
-    total_responses = len([d for d in block_data if not d['is_nogo']])
+    if FEEDBACK_ENABLED:
+        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
+        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
+        total_responses = len([d for d in block_data if not d['is_nogo']])
 
-    mean_rt = np.mean(correct_rts) if correct_rts else 0
-    accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
-    
-    if accuracy < 90:
-        performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
-        performance_color = 'red'
-    elif mean_rt > 0.350:
-        performance_message = get_text_with_newlines('Screens', 'feedback_faster')
-        performance_color = 'red'
-    else:
-        performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
-        performance_color = 'green'
+        mean_rt = np.mean(correct_rts) if correct_rts else 0
+        accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
+        
+        if accuracy < 90:
+            performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
+            performance_color = 'red'
+        elif mean_rt > 0.350:
+            performance_message = get_text_with_newlines('Screens', 'feedback_faster')
+            performance_color = 'red'
+        else:
+            performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
+            performance_color = 'green'
 
-    feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
-    feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
-    
-    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
-    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
-    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
-    
-    win.flip()
-    feedback_header.draw()
-    feedback_stats.draw()
-    feedback_performance.draw()
+        feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
+        feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
+        
+        feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
+        feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
+        feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
+        
+        win.flip()
+        feedback_header.draw()
+        feedback_stats.draw()
+        feedback_performance.draw()
 
-    trigger_base = 40
-    if p_port:
-        p_port.setData(trigger_base + practice_block_num)
-        core.wait(0.01)
-        p_port.setData(0)
-    else:
-        print(f"Faking parallel port trigger: {trigger_base + practice_block_num}")
-    win.flip()
-    core.wait(3)
+        trigger_base = 40
+        if p_port:
+            p_port.setData(trigger_base + practice_block_num)
+            core.wait(0.01)
+            p_port.setData(0)
+        else:
+            print(f"Faking parallel port trigger: {trigger_base + practice_block_num}")
+        win.flip()
+        core.wait(3)
 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_practice')
@@ -685,7 +692,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         for stim_dict in stimuli:
             stim_dict['stim'].draw()
         win.flip()
-        core.wait(0.120)
+        core.wait(ISI_DURATION) 
 
         if trial_in_block_num % 2 == 0:
             # Pattern trial (Even trial number)
@@ -785,7 +792,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         if is_nogo:
             response_logged = False
             
-            while cumulative_timer.getTime() < 1.0:
+            while cumulative_timer.getTime() < NOGO_TRIAL_DURATION:
                 if 'escape' in event.getKeys():
                     save_and_quit()
                 for stim_dict in stimuli:
@@ -966,44 +973,45 @@ for block_num in range(1, NUM_BLOCKS + 1):
     print(f"Data for Main Block {block_num} saved successfully.")
 
     # --- Display feedback for 3 seconds ---
-    correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
-    total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
-    total_responses = len([d for d in block_data if not d['is_nogo']])
+    if FEEDBACK_ENABLED:
+        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
+        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
+        total_responses = len([d for d in block_data if not d['is_nogo']])
 
-    mean_rt = np.mean(correct_rts) if correct_rts else 0
-    accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
-    
-    if accuracy < 90:
-        performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
-        performance_color = 'red'
-    elif mean_rt > 0.350:
-        performance_message = get_text_with_newlines('Screens', 'feedback_faster')
-        performance_color = 'red'
-    else:
-        performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
-        performance_color = 'green'
+        mean_rt = np.mean(correct_rts) if correct_rts else 0
+        accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
+        
+        if accuracy < 90:
+            performance_message = get_text_with_newlines('Screens', 'feedback_accurate')
+            performance_color = 'red'
+        elif mean_rt > 0.350:
+            performance_message = get_text_with_newlines('Screens', 'feedback_faster')
+            performance_color = 'red'
+        else:
+            performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
+            performance_color = 'green'
 
-    feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
-    feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
-    
-    feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
-    feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
-    feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
-    
-    win.flip()
-    feedback_header.draw()
-    feedback_stats.draw()
-    feedback_performance.draw()
+        feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
+        feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
+        
+        feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
+        feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
+        feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
+        
+        win.flip()
+        feedback_header.draw()
+        feedback_stats.draw()
+        feedback_performance.draw()
 
-    trigger_base = 20
-    if p_port:
-        p_port.setData(trigger_base + block_num)
-        core.wait(0.01)
-        p_port.setData(0)
-    else:
-        print(f"Faking parallel port trigger: {trigger_base + block_num}")
-    win.flip()
-    core.wait(3)
+        trigger_base = 20
+        if p_port:
+            p_port.setData(trigger_base + block_num)
+            core.wait(0.01)
+            p_port.setData(0)
+        else:
+            print(f"Faking parallel port trigger: {trigger_base + block_num}")
+        win.flip()
+        core.wait(3)
 
     if block_num < NUM_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_main')

@@ -1,1 +1,0 @@
-participant,session,block_number,trial_number,trial_in_block_num,trial_type,probability_type,sequence_used,stimulus_position_num,rt_non_cumulative_s,rt_cumulative_s,correct_key_pressed,response_key_pressed,correct_response,is_nogo,is_practice,epoch,mind_wandering_rating

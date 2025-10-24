@@ -89,7 +89,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename):
         
         # Display Quiz Introduction
         intro_text = get_text_with_newlines_quiz('Quiz', 'quiz_intro')
-        intro_stim = visual.TextStim(win, text=intro_text, color='black', height=40, wrapWidth=1000, font='Arial')
+        intro_stim = visual.TextStim(win, text=intro_text, color='black', height=30, wrapWidth=1000, font='Arial')
         intro_stim.draw()
         win.flip()
         event.waitKeys(keyList=['space', 'escape'])
