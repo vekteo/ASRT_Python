@@ -1,21 +1,36 @@
 # Import the necessary PsychoPy libraries and other modules
-from psychopy import visual, core, event, gui, parallel
+from psychopy import visual, core, event, gui
 import random
 import csv
 import configparser
 import numpy as np
 import os
-import io 
+import io
+from datetime import datetime
 from nogo_logic import select_nogo_trials_in_block
-from mind_wandering import show_mind_wandering_probe, load_mw_config
-from quiz_logic import run_comprehension_quiz
-from config_helpers import get_text_with_newlines, set_global_text_config 
+from mind_wandering import show_mind_wandering_probe # <-- CHANGED: load_mw_config removed
+from config_helpers import get_text_with_newlines, set_global_text_config
+import serial 
+import experiment_utils as utils 
+from mw_instructions import show_mw_instructions_and_quiz 
 
 # --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
 dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
 if not dlg.OK:
     core.quit()
+
+# --- Generate a unique filename with timestamp ---
+timestamp_str = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+data_folder = 'data'
+if not os.path.exists(data_folder):
+    os.makedirs(data_folder)
+
+# Define the single, unique filename for this entire run
+unique_filename = os.path.join(
+    data_folder,
+    f"participant_{expInfo['participant']}_session_{expInfo['session']}_{timestamp_str}_data.csv"
+)
 
 # --- Load Experiment Settings from a separate file ---
 config = configparser.ConfigParser()
@@ -32,12 +47,12 @@ try:
     PRACTICE_ENABLED = config.getboolean('Practice', 'practice_enabled')
     NUM_PRACTICE_BLOCKS = config.getint('Practice', 'num_practice_blocks')
     
-    # Read dynamic timing and feedback settings
+    # Read dynamic- timing and feedback settings
     ISI_DURATION = config.getfloat('Experiment', 'isi_duration_s')
     NOGO_TRIAL_DURATION = config.getfloat('Experiment', 'nogo_trial_duration_s')
     FEEDBACK_ENABLED = config.getboolean('Experiment', 'feedback_enabled')
     
-    # NEW: Read dynamic stimuli settings
+    # Read dynamic stimuli settings
     KEYS_STR = config.get('Experiment', 'response_keys_list')
     keys = [k.strip() for k in KEYS_STR.split(',')] # Parse string into list
     target_image_path = config.get('Experiment', 'target_image_filename')
@@ -45,17 +60,16 @@ try:
 
     # Validation check for keys
     if len(keys) != 4:
-         print("Error: The 'response_keys_list' in settings must contain exactly 4 keys (comma-separated).")
-         core.quit()
+        print("Error: The 'response_keys_list' in settings must contain exactly 4 keys (comma-separated).")
+        core.quit()
     
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
     core.quit()
 
 # --- LOAD ALL EXPERIMENT TEXT ---
-language_code = expInfo['language'] 
-text_filename = f'experiment_text_{language_code}.ini' 
-
+language_code = expInfo['language']
+text_filename = f'experiment_text_{language_code}.ini'
 text_config = configparser.ConfigParser()
 
 try:
@@ -75,9 +89,12 @@ except Exception as e:
     print(f"Error loading experiment text file: {e}")
     core.quit()
 
-# Initialize helper module's config with the filename
-load_mw_config(filename=text_filename) 
+# --- CHANGED: This is now the ONLY config setup call ---
+# This makes the 'text_config' object available to all other modules.
 set_global_text_config(text_config)
+
+# --- REMOVED: load_mw_config(filename=text_filename) ---
+# This was redundant and caused the bug.
 
 # --- Define a list of possible sequences ---
 all_sequences = [
@@ -108,11 +125,6 @@ win = visual.Window(
     numSamples=16
 )
 
-# --- Define image paths ---
-# Paths are now read from settings and defined above.
-# target_image_path = 'target_image.png' 
-# nogo_image_path = 'nogo_image.png'
-
 # Define stimulus properties
 circle_radius = 60
 y_pos = 0.0
@@ -120,7 +132,6 @@ x_positions = [-240, -80, 80, 240]
 
 # Create circle stimuli and their corresponding keys
 stimuli = []
-# keys = ['s', 'f', 'j', 'l'] # Keys are now read from settings
 for x, key in zip(x_positions, keys):
     circle = visual.Circle(
         win=win,
@@ -133,54 +144,42 @@ for x, key in zip(x_positions, keys):
     stimuli.append({'stim': circle, 'key': key})
 
 # State variables for the experiment
-all_data = [] 
+all_data = []
 total_trial_count = 0
 header_written = False
-NA_MW_RATING = 'NA' 
+NA_MW_RATING = 'NA'
 
-# --- Initialize Parallel Port for Triggers ---
-p_port = None
+# --- Initialize Serial Port for Triggers ---
+ser_port = None
+COM_PORT_NAME = 'COM3'
+
 try:
-    p_port = parallel.ParallelPort(address='0x0378') 
-    p_port.setData(0)
-    print(f"Parallel port initialized at address 0x0378.")
+    ser_port = serial.Serial(
+        port=COM_PORT_NAME,
+        baudrate=2000000, 
+        timeout=1,
+        rtscts=False, 
+        dsrdtr=False,
+        xonxoff=False
+    )
+    ser_port.reset_input_buffer()
+    ser_port.reset_output_buffer()
+    ser_port.write(bytes([0]))
+    ser_port.flush()
+    print(f"Serial port initialized at {COM_PORT_NAME} (2,000,000 baud).")
 except Exception as e:
-    print(f"Parallel port not found or could not be initialized. Error: {e}")
-    print("Continuing without parallel port (triggers will be faked).")
-    p_port = None
-
-# --- Helper function for sending and resetting a trigger pulse ---
-def send_trigger_pulse(trigger_value, pulse_duration=0.01):
-    """Sends a trigger pulse (value, duration) and resets the port to 0."""
-    if p_port:
-        p_port.setData(trigger_value)
-        core.wait(pulse_duration)
-        p_port.setData(0)
-    else:
-        print(f"Faking parallel port trigger: {trigger_value}")
-
+    print(f"Serial port {COM_PORT_NAME} not found or could not be initialized. Error: {e}")
+    print("Continuing without serial port (triggers will be faked).")
+    ser_port = None
+    
 # Store positions of the last two trials for the 2-back check
 pos_minus_1 = None
 pos_minus_2 = None
 
-# --- Helper function to save data and quit ---
-def save_and_quit():
-    data_folder = 'data'
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder)
-    
-    filename = os.path.join(data_folder, f"participant_{expInfo['participant']}_session_{expInfo['session']}_data.csv")
-    
-    with open(filename, 'w', newline='') as csvfile:
-        fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
-                      'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4'] 
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(all_data)
-    
-    print("Experiment terminated early. Data saved successfully.")
-    win.close()
-    core.quit()
+# --- Helper function wrapper to save data and quit ---
+def quit_experiment():
+    """Wrapper function to call the utility save_and_quit."""
+    utils.save_and_quit(win, unique_filename, all_data)
 
 # --- Instruction Window ---
 keys_list_str = ", ".join([f"'{k}'" for k in keys])
@@ -197,59 +196,17 @@ win.flip()
 key_pressed = event.waitKeys(keyList=['space', 'escape'])
 
 if 'escape' in key_pressed:
-    save_and_quit()
+    quit_experiment() 
     
-# --- Mind Wandering Probe Instructions ---
-
+# --- Mind Wandering Probe Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
-    mw_instructions = [
-        get_text_with_newlines('MW_Probes', 'mw_intro'),
-        get_text_with_newlines('MW_Probes', 'mw_q1'),
-        get_text_with_newlines('MW_Probes', 'mw_q2_off_task'),
-        get_text_with_newlines('MW_Probes', 'mw_q3_spontaneous'),
-        get_text_with_newlines('MW_Probes', 'mw_q4_affective'),
-        get_text_with_newlines('MW_Probes', 'mw_on_task_follow_up'),
-        get_text_with_newlines('MW_Probes', 'mw_final_note')
-    ]
-
-    for i, page_text in enumerate(mw_instructions):
-        page_num = i + 1
-        total_pages = len(mw_instructions)
-        
-        if page_num == total_pages:
-            # Gating prompt text based on whether the quiz is enabled
-            if not RUN_COMPREHENSION_QUIZ:
-                 prompt_key = 'prompt_continue'
-                 default_quiz_prompt = "(Press SPACE to continue to the main task.)"
-            else:
-                 prompt_key = 'prompt_quiz'
-                 default_quiz_prompt = "(Press SPACE to continue to the quiz.)"
-                 
-            prompt_text = get_text_with_newlines('Screens', prompt_key, default=default_quiz_prompt)
-        else:
-            default_continue_prompt = "(Press SPACE to continue.)"
-            prompt_text = get_text_with_newlines('Screens', 'prompt_continue', default=default_continue_prompt)
-
-        combined_text = page_text + "\n\n" + prompt_text.strip()
-        
-        mw_message = visual.TextStim(
-            win, text=combined_text, color='black', height=25, wrapWidth=1000, 
-            alignHoriz='center', alignVert='center', font='Arial'
-        )
-
-        mw_message.draw()
-        win.flip()
-
-        key_pressed = event.waitKeys(keyList=['space', 'escape'])
-
-        if 'escape' in key_pressed:
-            save_and_quit()
-            
-    # --- Quiz Implementation (Gated by Setting) ---
-    if RUN_COMPREHENSION_QUIZ:
-        # Run the quiz only if MW is involved AND the quiz is explicitly enabled
-        run_comprehension_quiz(win, save_and_quit, text_filename) 
-
+    show_mw_instructions_and_quiz(
+        win, 
+        quit_experiment, 
+        RUN_COMPREHENSION_QUIZ, 
+        text_filename
+    )
+    
 # --- Initial 'Start Experiment' window ---
 if PRACTICE_ENABLED:
     start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
@@ -262,13 +219,11 @@ start_message = visual.TextStim(win, text=start_text, color='black', height=40, 
 start_message.draw()
 win.flip()
 
-event.waitKeys()
-if p_port:
-    p_port.setData(start_trigger_value)
-    core.wait(0.01)
-    p_port.setData(0)
-else:
-    print(f"Faking parallel port trigger: {start_trigger_value}")
+# --- CHANGED: Added waitKeys check ---
+key_pressed = event.waitKeys(keyList=['space', 'escape'])
+if 'escape' in key_pressed:
+    quit_experiment()
+utils.send_trigger_pulse(ser_port, start_trigger_value)
 
 # --- Practice Loop ---
 for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED else []:
@@ -313,14 +268,14 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         is_nogo = (trial_in_block in nogo_trial_indices_in_block)
 
         if 'escape' in event.getKeys():
-            save_and_quit()
+            quit_experiment()
 
         for stim_dict in stimuli:
             stim_dict['stim'].fillColor = 'white'
         for stim_dict in stimuli:
             stim_dict['stim'].draw()
         win.flip()
-        core.wait(ISI_DURATION) 
+        core.wait(ISI_DURATION)
 
         target_stim_pos = practice_positions_list[practice_list_index]
         practice_list_index += 1
@@ -356,12 +311,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         else:
             trial_trigger = 151 + target_stim_pos
 
-        if p_port:
-            p_port.setData(trial_trigger)
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trial_trigger}")
+        utils.send_trigger_pulse(ser_port, trial_trigger)
         print(f"Trial {total_trial_count} onset trigger: {trial_trigger} (Type: {trial_type}, Pos: {target_stim_pos}, Prob: {probability_type})")
 
         cumulative_timer = core.Clock()
@@ -381,20 +331,15 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     pressed_key, rt = responses[0]
                     
                     if pressed_key == 'escape':
-                        save_and_quit()
+                        quit_experiment()
 
                     was_correct = False
                     rt_cumulative = rt
                     rt_non_cumulative = rt
                     pressed_key_pos = keys.index(pressed_key) + 1
-                    response_trigger = 341 + pressed_key_pos
+                    response_trigger = 91 + pressed_key_pos 
                     
-                    if p_port:
-                        p_port.setData(response_trigger)
-                        core.wait(0.01)
-                        p_port.setData(0)
-                    else:
-                        print(f"Faking parallel port trigger: {response_trigger}")
+                    utils.send_trigger_pulse(ser_port, response_trigger)
                     print(f"Response trigger: {response_trigger} (No-Go Error)")
                     
                     block_data.append({
@@ -452,7 +397,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             correct_response_given = False
             while not correct_response_given:
                 if 'escape' in event.getKeys():
-                    save_and_quit()
+                    quit_experiment()
             
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
@@ -466,7 +411,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     pressed_key = response_keys[0]
                 
                     if pressed_key == 'escape':
-                        save_and_quit()
+                        quit_experiment()
                     rt_non_cumulative = response_timer.getTime()
                     rt_cumulative = cumulative_timer.getTime()
                 
@@ -474,18 +419,13 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     pressed_key_pos = keys.index(pressed_key) + 1
                     
                     if was_correct:
-                        response_type_base = 321
+                        response_type_base = 71
                         response_trigger = response_type_base + pressed_key_pos
                     else:
-                        incorrect_response_base = 331
+                        incorrect_response_base = 81
                         response_trigger = incorrect_response_base + pressed_key_pos
                     
-                    if p_port:
-                        p_port.setData(response_trigger)
-                        core.wait(0.01)
-                        p_port.setData(0)
-                    else:
-                        print(f"Faking parallel port trigger: {response_trigger}")
+                    utils.send_trigger_pulse(ser_port, response_trigger)
                     print(f"Response trigger: {response_trigger} (Type: {trial_type}, Correct: {was_correct}, Key Pos: {pressed_key_pos})")
 
                     block_data.append({
@@ -516,12 +456,18 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
 
                     if was_correct:
                         correct_response_given = True
-        
+            
         if 'escape' in event.getKeys():
-            save_and_quit()
+            quit_experiment()
 
     # --- Mind Wandering Probe for Practice Block ---
-    mw_ratings = show_mind_wandering_probe(win, MW_TESTING_INVOLVED, NA_MW_RATING, save_and_quit)
+    mw_ratings = show_mind_wandering_probe(
+        win, 
+        ser_port,
+        MW_TESTING_INVOLVED, 
+        NA_MW_RATING, 
+        quit_experiment
+    )
     
     for d in block_data:
         d['mind_wandering_rating_1'] = mw_ratings[0]
@@ -531,21 +477,15 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
 
     all_data.extend(block_data)
     
-    # --- Save data after each block ---
-    data_folder = 'data'
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder)
-    
-    filename = os.path.join(data_folder, f"participant_{expInfo['participant']}_session_{expInfo['session']}_data.csv")
-    
-    with open(filename, 'w', newline='') as csvfile:
+    # --- Save data after each block ---  
+    with open(unique_filename, 'w', newline='') as csvfile:
         fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
                       'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(all_data)
 
-    print(f"Data for Practice Block {practice_block_num} saved successfully.")
+    print(f"Data for Practice Block {practice_block_num} saved successfully to {unique_filename}")
 
     # --- Display feedback for 3 seconds ---
     if FEEDBACK_ENABLED:
@@ -579,12 +519,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         feedback_performance.draw()
 
         trigger_base = 40
-        if p_port:
-            p_port.setData(trigger_base + practice_block_num)
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trigger_base + practice_block_num}")
+        utils.send_trigger_pulse(ser_port, trigger_base + practice_block_num)
         win.flip()
         core.wait(3)
 
@@ -594,18 +529,14 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         win.flip()
         continuation_message.draw()
         win.flip()
-        event.waitKeys()
-        if 'escape' in event.getKeys():
-            save_and_quit()
+        # --- CHANGED: Added waitKeys check ---
+        key_pressed = event.waitKeys(keyList=['space', 'escape'])
+        if 'escape' in key_pressed:
+            quit_experiment()
 
         trigger_base = 80
-        if p_port:
-            p_port.setData(trigger_base + (practice_block_num + 1))
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trigger_base + (practice_block_num + 1)}")
-    
+        utils.send_trigger_pulse(ser_port, trigger_base + (practice_block_num + 1))
+        
 if PRACTICE_ENABLED:
     end_practice_text = get_text_with_newlines('Screens', 'end_practice')
     end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000, font='Arial')
@@ -613,15 +544,11 @@ if PRACTICE_ENABLED:
     win.flip()
     end_practice_message.draw()
     win.flip()
-    event.waitKeys()
-    if 'escape' in event.getKeys():
-        save_and_quit()
-    if p_port:
-        p_port.setData(99)
-        core.wait(0.01)
-        p_port.setData(0)
-    else:
-        print(f"Faking parallel port trigger: 99")
+    # --- CHANGED: Added waitKeys check ---
+    key_pressed = event.waitKeys(keyList=['space', 'escape'])
+    if 'escape' in key_pressed:
+        quit_experiment()
+    utils.send_trigger_pulse(ser_port, 99)
 
 # --- Main Experiment Loop ---
 for block_num in range(1, NUM_BLOCKS + 1):
@@ -684,7 +611,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         is_nogo = (trial_in_block in nogo_trial_indices_in_block)
 
         if 'escape' in event.getKeys():
-            save_and_quit()
+            quit_experiment()
 
         for stim_dict in stimuli:
             stim_dict['stim'].fillColor = 'white'
@@ -692,7 +619,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         for stim_dict in stimuli:
             stim_dict['stim'].draw()
         win.flip()
-        core.wait(ISI_DURATION) 
+        core.wait(ISI_DURATION)
 
         if trial_in_block_num % 2 == 0:
             # Pattern trial (Even trial number)
@@ -779,12 +706,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
             pos=stimuli[target_stim_index]['stim'].pos
         )
         
-        if p_port:
-            p_port.setData(trial_trigger)
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trial_trigger}")
+        utils.send_trigger_pulse(ser_port, trial_trigger)
         print(f"Trial {total_trial_count} onset trigger: {trial_trigger} (Type: {trial_type}, Pos: {target_stim_pos}, Prob: {probability_type})")
 
         cumulative_timer = core.Clock()
@@ -794,7 +716,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
             
             while cumulative_timer.getTime() < NOGO_TRIAL_DURATION:
                 if 'escape' in event.getKeys():
-                    save_and_quit()
+                    quit_experiment()
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
                 border_circle.draw()
@@ -806,20 +728,14 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     pressed_key, rt = responses[0]
                     
                     if pressed_key == 'escape':
-                        save_and_quit()
+                        quit_experiment()
 
                     was_correct = False
                     rt_cumulative = rt
                     rt_non_cumulative = rt
                     pressed_key_pos = keys.index(pressed_key) + 1
-                    response_trigger = 341 + pressed_key_pos
-                    
-                    if p_port:
-                        p_port.setData(response_trigger)
-                        core.wait(0.01)
-                        p_port.setData(0)
-                    else:
-                        print(f"Faking parallel port trigger: {response_trigger}")
+                    response_trigger = 91 + pressed_key_pos
+                    utils.send_trigger_pulse(ser_port, response_trigger)
                     print(f"Response trigger: {response_trigger} (No-Go Error)")
                     
                     block_data.append({
@@ -877,7 +793,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
             correct_response_given = False
             while not correct_response_given:
                 if 'escape' in event.getKeys():
-                    save_and_quit()
+                    quit_experiment()
             
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
@@ -891,7 +807,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     pressed_key = response_keys[0]
                 
                     if pressed_key == 'escape':
-                        save_and_quit()
+                        quit_experiment() 
                     rt_non_cumulative = response_timer.getTime()
                     rt_cumulative = cumulative_timer.getTime()
                 
@@ -899,18 +815,13 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     pressed_key_pos = keys.index(pressed_key) + 1
                     
                     if was_correct:
-                        response_type_base = 301 if trial_type == 'P' else 321
+                        response_type_base = 71 
                         response_trigger = response_type_base + pressed_key_pos
                     else:
-                        incorrect_response_base = 311 if trial_type == 'P' else 331
+                        incorrect_response_base = 81 
                         response_trigger = incorrect_response_base + pressed_key_pos
                     
-                    if p_port:
-                        p_port.setData(response_trigger)
-                        core.wait(0.01)
-                        p_port.setData(0)
-                    else:
-                        print(f"Faking parallel port trigger: {response_trigger}")
+                    utils.send_trigger_pulse(ser_port, response_trigger) 
                     print(f"Response trigger: {response_trigger} (Type: {trial_type}, Correct: {was_correct}, Key Pos: {pressed_key_pos})")
 
                     block_data.append({
@@ -941,12 +852,18 @@ for block_num in range(1, NUM_BLOCKS + 1):
 
                     if was_correct:
                         correct_response_given = True
-        
+            
         if 'escape' in event.getKeys():
-            save_and_quit()
+            quit_experiment()
     
     # --- Mind Wandering Probe for Main Block ---
-    mw_ratings = show_mind_wandering_probe(win, MW_TESTING_INVOLVED, NA_MW_RATING, save_and_quit)
+    mw_ratings = show_mind_wandering_probe(
+        win, 
+        ser_port,
+        MW_TESTING_INVOLVED, 
+        NA_MW_RATING, 
+        quit_experiment
+    ) 
     
     for d in block_data:
         d['mind_wandering_rating_1'] = mw_ratings[0]
@@ -957,20 +874,14 @@ for block_num in range(1, NUM_BLOCKS + 1):
     all_data.extend(block_data)
     
     # --- Save data after each block ---
-    data_folder = 'data'
-    if not os.path.exists(data_folder):
-        os.makedirs(data_folder)
-
-    filename = os.path.join(data_folder, f"participant_{expInfo['participant']}_session_{expInfo['session']}_data.csv")
-    
-    with open(filename, 'w', newline='') as csvfile:
+    with open(unique_filename, 'w', newline='') as csvfile:
         fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
                       'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(all_data)
 
-    print(f"Data for Main Block {block_num} saved successfully.")
+    print(f"Data for Main Block {block_num} saved successfully to {unique_filename}")
 
     # --- Display feedback for 3 seconds ---
     if FEEDBACK_ENABLED:
@@ -1004,12 +915,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         feedback_performance.draw()
 
         trigger_base = 20
-        if p_port:
-            p_port.setData(trigger_base + block_num)
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trigger_base + block_num}")
+        utils.send_trigger_pulse(ser_port, trigger_base + block_num)
         win.flip()
         core.wait(3)
 
@@ -1019,26 +925,21 @@ for block_num in range(1, NUM_BLOCKS + 1):
         win.flip()
         continuation_message.draw()
         win.flip()
-        event.waitKeys()
-        if 'escape' in event.getKeys():
-            save_and_quit()
+        key_pressed = event.waitKeys(keyList=['space', 'escape'])
+        if 'escape' in key_pressed:
+            quit_experiment()
 
         trigger_base = 10
-        if p_port:
-            p_port.setData(trigger_base + (block_num + 1))
-            core.wait(0.01)
-            p_port.setData(0)
-        else:
-            print(f"Faking parallel port trigger: {trigger_base + (block_num + 1)}")
+        utils.send_trigger_pulse(ser_port, trigger_base + (block_num + 1))
 
 # --- End of Experiment message ---
-print("Data saved successfully.")
+print(f"Data saved successfully to {unique_filename}")
 end_text = get_text_with_newlines('Screens', 'end_experiment')
 end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000, font='Arial')
 end_message.draw()
 win.flip()
-event.waitKeys()
-if 'escape' in event.getKeys():
-    save_and_quit()
+key_pressed = event.waitKeys(keyList=['space', 'escape'])
+if 'escape' in key_pressed:
+    quit_experiment()
 win.close()
 core.quit()

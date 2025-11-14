@@ -1,38 +1,36 @@
 import configparser
-import os
-import io
 
-# Global variable to store the text configuration once loaded
+# Global variable to hold the single, central text configuration
 GLOBAL_TEXT_CONFIG = None
 
-def set_global_text_config(config_obj):
-    """Sets the global config object reference from the main script."""
+def set_global_text_config(config_object):
+    """
+    Sets the global text config object for all modules to use.
+    This is called from main_experiment.py.
+    """
     global GLOBAL_TEXT_CONFIG
-    GLOBAL_TEXT_CONFIG = config_obj
-    
+    GLOBAL_TEXT_CONFIG = config_object
+
 def get_text_with_newlines(section, option, default=None):
     """
-    Retrieves text from the global config object and handles escape sequences 
-    for display in the main script.
+    Retrieves text from the GLOBAL config, converts escaped newlines (\n),
+    and provides a default if the option is not found.
+    
+    This version correctly handles special UTF-8 characters.
     """
-    global GLOBAL_TEXT_CONFIG 
+    global GLOBAL_TEXT_CONFIG
     
     if GLOBAL_TEXT_CONFIG is None:
-        # Fallback in case the main script didn't set the config
-        print("Warning: GLOBAL_TEXT_CONFIG is not set in config_helpers. Attempting to load 'experiment_text.ini'.")
-        # A minimal loading attempt for robustness, though main script should handle it
-        temp_config = configparser.ConfigParser()
-        try:
-            temp_config.read('experiment_text_en.ini') # Defaulting to en for a simple check
-            set_global_text_config(temp_config)
-        except:
-            pass
-        
+        print("Error in config_helpers: GLOBAL_TEXT_CONFIG has not been set.")
+        return default if default is not None else "CONFIG_ERROR"
+    
     try:
         text_content = GLOBAL_TEXT_CONFIG.get(section, option, raw=True)
-        return text_content.encode().decode('unicode_escape')
-    except configparser.NoOptionError:
+        return text_content.encode('latin-1').decode('unicode_escape')
+        
+    except (configparser.NoOptionError, configparser.NoSectionError):
         if default is not None:
             return default
         else:
-            raise
+            print(f"Error: Missing config text for [{section}] -> {option}")
+            return f"MISSING_TEXT: [{section}] {option}"

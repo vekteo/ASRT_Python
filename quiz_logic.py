@@ -3,40 +3,7 @@ from psychopy import visual, core, event
 import configparser
 import io
 import os
-
-# NOTE: This assumes get_text_with_newlines is also accessible/imported, 
-# but for a simple helper, we will copy the logic needed to access the config.
-
-MW_TEXT_CONFIG = None
-
-def get_text_with_newlines_quiz(section, option, default=None):
-    """Retrieves text and handles escape sequences for display, locally to quiz_logic."""
-    global MW_TEXT_CONFIG
-    try:
-        text_content = MW_TEXT_CONFIG.get(section, option, raw=True)
-        return text_content.encode().decode('unicode_escape')
-    except configparser.NoOptionError:
-        if default is not None:
-            return default
-        else:
-            raise
-
-def load_quiz_config(filename=None):
-    """Loads the experiment_text.ini file for use within this module."""
-    global MW_TEXT_CONFIG
-    
-    load_filename = filename if filename else 'experiment_text.ini'
-    
-    if MW_TEXT_CONFIG is None or filename:
-        MW_TEXT_CONFIG = configparser.ConfigParser()
-        try:
-            if os.path.exists(load_filename):
-                with io.open(load_filename, mode='r', encoding='utf-8-sig') as f:
-                    file_content = f.read()
-                file_content = file_content.strip()
-                MW_TEXT_CONFIG.read_string(file_content)
-        except Exception as e:
-            print(f"Error loading quiz config ({load_filename}): {e}")
+from config_helpers import get_text_with_newlines
 
 # --- QUIZ DATA STRUCTURE ---
 QUIZ_QUESTIONS_DATA = [
@@ -52,59 +19,70 @@ QUIZ_QUESTIONS_DATA = [
 ]
 
 # --- MAIN FUNCTION FOR QUIZ EXECUTION ---
-def run_comprehension_quiz(win, save_and_quit, text_filename):
+def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1):
     """
-    Runs the comprehension quiz, loading text via the provided filename, 
-    and enforcing pass/fail logic with retry loops.
+    Runs one round of the comprehension quiz.
+    Returns True if passed (0 errors), False otherwise.
     """
-    # Load the specific language file using the provided filename
-    load_quiz_config(filename=text_filename)
 
-    # Helper to display a single question and get keyboard input ('1', '2')
+    # Helper to display a single question and get keyboard input ('1', '2', etc.)
     def display_quiz_question(q_num, q_text, choices_str):
         choices = [c.strip() for c in choices_str.split(',')]
         
         question_display = f"Question {q_num} of 9:\n\n{q_text}\n\n"
-        for i, choice in enumerate(choices):
-            question_display += f"Press {i+1}: {choice}\n" 
         
-        # NOTE: Using font='Arial' for accent reliability
+        if len(choices) == 2:
+            # Special logic for 2 choices: keys 1 and 4
+            question_display += f"Press 1: {choices[0]}\n"
+            question_display += f"Press 4: {choices[1]}\n"
+            valid_keys = ['1', '4', 'escape']
+        else:
+            # Original logic for 1, 3, or 4 choices
+            for i, choice in enumerate(choices):
+                question_display += f"Press {i+1}: {choice}\n" 
+            valid_keys = [str(i+1) for i in range(len(choices))] + ['escape']
+            
         q_stim = visual.TextStim(win, text=question_display, color='black', height=30, 
-                                 wrapWidth=1000, font='Arial', alignHoriz='center', alignVert='center')
+                                 wrapWidth=1200, font='Arial', alignHoriz='center', alignVert='center')
         
         q_stim.draw()
         win.flip()
         
-        response = event.waitKeys(keyList=['1', '2', '3', 'escape'])
+        # 'valid_keys' is now set by the new logic above
+        response = event.waitKeys(keyList=valid_keys)
         
         if 'escape' in response:
             save_and_quit()
             
         return response[0]
 
-    # Function to execute one full quiz round
+    # Function to execute one full quiz round and return error count
     def execute_quiz_round():
         nonlocal save_and_quit
         quiz_error_count = 0
         
-        # Display Quiz Introduction
-        intro_text = get_text_with_newlines_quiz('Quiz', 'quiz_intro')
-        intro_stim = visual.TextStim(win, text=intro_text, color='black', height=30, wrapWidth=1000, font='Arial')
-        intro_stim.draw()
-        win.flip()
-        event.waitKeys(keyList=['space', 'escape'])
-
         # Run Questions
         for i, q_data in enumerate(QUIZ_QUESTIONS_DATA):
             q_num = i + 1
             
-            q_text = get_text_with_newlines_quiz('Quiz', q_data['q_key'])
-            choices_str = get_text_with_newlines_quiz('Quiz', q_data['c_key'])
-            correct_ans_str = get_text_with_newlines_quiz('Quiz', q_data['a_key'])
+            # --- CHANGED: Using the correct, imported function ---
+            q_text = get_text_with_newlines('Quiz', q_data['q_key'])
+            choices_str = get_text_with_newlines('Quiz', q_data['c_key'])
+            correct_ans_str = get_text_with_newlines('Quiz', q_data['a_key'])
             
             response_key = display_quiz_question(q_num, q_text, choices_str)
             
-            response_index_str = str(int(response_key) - 1)
+            # --- Map response key ('1' or '4') to 0-based index ('0' or '1') ---
+            num_choices = len(choices_str.split(','))
+            
+            if num_choices == 2 and response_key == '4':
+                # Map '4' to index '1' ONLY for 2-choice questions
+                response_index_str = '1'
+            else:
+                # Original logic works for '1', '2', '3'
+                # and for '1' in the 2-choice case
+                response_index_str = str(int(response_key) - 1)
+                
             is_correct = (response_index_str == correct_ans_str)
             
             if not is_correct:
@@ -120,43 +98,59 @@ def run_comprehension_quiz(win, save_and_quit, text_filename):
             
             feedback_stim.draw()
             win.flip()
-            event.waitKeys(keyList=['space', 'escape'])
+            key_pressed = event.waitKeys(keyList=['space', 'escape'])
+            if 'escape' in key_pressed:
+                save_and_quit()
 
         return quiz_error_count
 
     # --- Main Quiz Flow Control ---
     
+    # 1. Display Quiz Introduction based on attempt number
+    if attempt_number == 1:
+        intro_key = 'quiz_intro'
+        default_intro = "You will now complete a short 9-question comprehension quiz.\n\n(Press SPACE to begin.)"
+    else:
+        intro_key = 'quiz_failed_retry'
+        default_intro = f"You had some incorrect answers. Let's try the quiz again.\n\nThis is attempt {attempt_number}.\n\n(Press SPACE to begin.)"
+    
+    intro_text = get_text_with_newlines('Quiz', intro_key, default=default_intro)
+    intro_stim = visual.TextStim(win, text=intro_text, color='black', height=30, wrapWidth=1200, font='Arial')
+    intro_stim.draw()
+    win.flip()
+    key_pressed = event.waitKeys(keyList=['space', 'escape'])
+    if 'escape' in key_pressed:
+        save_and_quit()
+
+    # 2. Execute one round
     error_count = execute_quiz_round()
     
-    while error_count > 0:
-        
-        correct_count = 9 - error_count
-        
-        # Display Summary/Explanation Pages (Uses simplified text structure for cross-language compatibility)
-        summary_text = get_text_with_newlines_quiz('Quiz', 'quiz_explanation_page1').format(correct_count=correct_count)
-        
-        # Display summary and decision screen
-        decision_text = f"Quiz finished. You answered {correct_count} out of 9 questions correctly.\n\n"
-        decision_text += get_text_with_newlines_quiz('Quiz', 'quiz_passed_start') + " (PRESS 1)\n"
-        decision_text += get_text_with_newlines_quiz('Quiz', 'quiz_failed_retry') + " (PRESS 2)"
-        
-        decision_stim = visual.TextStim(win, text=decision_text, color='black', height=35, wrapWidth=1000, font='Arial')
-        decision_stim.draw()
-        win.flip()
-        
-        decision = event.waitKeys(keyList=['1', '2', 'escape'])
-        
-        if 'escape' in decision or decision[0] == '1':
-            break 
-        else:
-            error_count = execute_quiz_round()
-    
-    # Display Final Status
+    # 3. Check results and return True (Pass) or False (Fail)
     if error_count == 0:
-        final_text = get_text_with_newlines_quiz('Quiz', 'quiz_passed_congrats')
+        # PASSED
+        final_text = get_text_with_newlines('Quiz', 'quiz_passed_congrats', default="Congratulations, you passed the quiz!\n\n(Press SPACE to continue.)")
         final_stim = visual.TextStim(win, text=final_text, color='green', height=40, font='Arial')
         final_stim.draw()
         win.flip()
         event.waitKeys(keyList=['space', 'escape'])
-    
-    return True
+        return True
+        
+    else:
+        # FAILED
+        correct_count = 9 - error_count
+        
+        # Display failure/summary message
+        summary_text = get_text_with_newlines(
+            'Quiz', 
+            'quiz_explanation_page1', # This text key is used for the "you failed" summary
+            default="You answered {correct_count} out of 9 questions correctly."
+        ).format(correct_count=correct_count)
+        
+        
+        summary_text += "\n\n(Press SPACE to continue.)"
+
+        summary_stim = visual.TextStim(win, text=summary_text, color='black', height=22, wrapWidth=1200, font='Arial')
+        summary_stim.draw()
+        win.flip()
+        event.waitKeys(keyList=['space', 'escape'])
+        return False
