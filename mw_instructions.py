@@ -6,13 +6,24 @@ from config_helpers import get_text_with_newlines
 import experiment_utils as utils
 from quiz_logic import run_comprehension_quiz
 
-def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, text_filename):
+# --- CHANGED: Added riponda_port=None to the function signature ---
+def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, text_filename, riponda_port=None):
     """
     Displays all Mind Wandering instruction pages and runs the
     comprehension quiz if it is enabled.
-    comprehension quiz if it is enabled.
     """
-      
+    
+    # --- ADDED: Local Riponda map for MW screens (1, 2, 3, 4) ---
+    # We use this map to detect *any* of the 4 button presses
+    # 0x30 -> '1', 0x70 -> '2', 0xb0 -> '3', 0xf0 -> '4'
+    mw_riponda_map = {
+        48: '1',  # Button 1 Press
+        112: '2', # Button 2 Press
+        176: '3', # Button 3 Press
+        240: '4'  # Button 4 Press
+    }
+    # --- END ADD ---
+
     # Q1 Response Options
     q1_button_details = [
         {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q1_label_1', default="Not at all"), 'x': -300},
@@ -120,9 +131,35 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
         
         win.flip() 
 
-        key_pressed = event.waitKeys(keyList=['space', 'escape'])
+        # --- CHANGED: Replaced event.waitKeys() with a custom polling loop ---
+        # This allows 'space' OR any Riponda button to advance
+        pressed_key = None
+        while pressed_key is None:
+            # 1. Check Keyboard
+            kb_responses = event.getKeys(keyList=['space', 'escape'])
+            if kb_responses:
+                pressed_key = kb_responses[0]
+                break # Exit loop on keyboard press
 
-        if 'escape' in key_pressed:
+            # 2. Check Riponda (any button press)
+            if riponda_port and riponda_port.in_waiting >= 6:
+                try:
+                    packet = riponda_port.read(6)
+                    # Check for a valid "press" packet (any of the 4 buttons)
+                    if packet[0] == 0x6b and packet[1] in mw_riponda_map:
+                        pressed_key = 'riponda_press' # We just need to break the loop
+                        riponda_port.reset_input_buffer()
+                        break
+                    else:
+                        riponda_port.reset_input_buffer() # Ignore release packets
+                except Exception as e:
+                    print(f"Riponda read error: {e}")
+                    riponda_port.reset_input_buffer()
+            
+            core.wait(0.001) # Don't fry the CPU
+        # --- END CHANGE ---
+
+        if pressed_key == 'escape':
             quit_experiment()
             
     # --- Quiz Implementation (Gated by Setting) ---
@@ -134,11 +171,13 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
         while not quiz_passed and quiz_attempts < MAX_QUIZ_ATTEMPTS:
             quiz_attempts += 1 
             
+            # --- CHANGED: Added riponda_port to the function call ---
             quiz_passed = run_comprehension_quiz(
                 win, 
                 quit_experiment,
                 text_filename,
-                attempt_number=quiz_attempts
+                attempt_number=quiz_attempts,
+                riponda_port=riponda_port # <-- ADDED
             )
 
         if not quiz_passed:
@@ -158,6 +197,30 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
             )
             fail_message.draw()
             win.flip()
-            key_pressed = event.waitKeys(keyList=['space', 'escape'])
-            if 'escape' in key_pressed:
+            
+            # --- CHANGED: Replaced event.waitKeys() with a custom polling loop ---
+            pressed_key = None
+            while pressed_key is None:
+                # 1. Check Keyboard
+                kb_responses = event.getKeys(keyList=['space', 'escape'])
+                if kb_responses:
+                    pressed_key = kb_responses[0]
+                    break 
+                # 2. Check Riponda
+                if riponda_port and riponda_port.in_waiting >= 6:
+                    try:
+                        packet = riponda_port.read(6)
+                        if packet[0] == 0x6b and packet[1] in mw_riponda_map:
+                            pressed_key = 'riponda_press'
+                            riponda_port.reset_input_buffer()
+                            break
+                        else:
+                            riponda_port.reset_input_buffer()
+                    except Exception as e:
+                        print(f"Riponda read error: {e}")
+                        riponda_port.reset_input_buffer()
+                core.wait(0.001)
+            # --- END CHANGE ---
+
+            if pressed_key == 'escape':
                 quit_experiment()

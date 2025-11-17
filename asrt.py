@@ -8,7 +8,7 @@ import os
 import io
 from datetime import datetime
 from nogo_logic import select_nogo_trials_in_block
-from mind_wandering import show_mind_wandering_probe # <-- CHANGED: load_mw_config removed
+from mind_wandering import show_mind_wandering_probe
 from config_helpers import get_text_with_newlines, set_global_text_config
 import serial 
 import experiment_utils as utils 
@@ -62,7 +62,11 @@ try:
     if len(keys) != 4:
         print("Error: The 'response_keys_list' in settings must contain exactly 4 keys (comma-separated).")
         core.quit()
-    
+        
+    RIPONDA_ENABLED = config.getboolean('Experiment', 'riponda_enabled', fallback=False)
+    RIPONDA_PORT_NAME = config.get('Experiment', 'riponda_port', fallback='COM4')
+    RIPONDA_BAUDRATE = config.getint('Experiment', 'riponda_baudrate', fallback=115200)
+      
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
     core.quit()
@@ -89,12 +93,7 @@ except Exception as e:
     print(f"Error loading experiment text file: {e}")
     core.quit()
 
-# --- CHANGED: This is now the ONLY config setup call ---
-# This makes the 'text_config' object available to all other modules.
 set_global_text_config(text_config)
-
-# --- REMOVED: load_mw_config(filename=text_filename) ---
-# This was redundant and caused the bug.
 
 # --- Define a list of possible sequences ---
 all_sequences = [
@@ -143,6 +142,16 @@ for x, key in zip(x_positions, keys):
     )
     stimuli.append({'stim': circle, 'key': key})
 
+# --- Hard-coded Riponda Byte Map ---
+riponda_byte_map = {
+    48: keys[0],  # Button 1 Press (0x30)
+    112: keys[1], # Button 2 Press (0x70)
+    176: keys[2], # Button 3 Press (0xb0)
+    240: keys[3]  # Button 4 Press (0xf0)
+}
+if RIPONDA_ENABLED:
+    print(f"Riponda XID byte map created: {riponda_byte_map}")
+
 # State variables for the experiment
 all_data = []
 total_trial_count = 0
@@ -172,6 +181,23 @@ except Exception as e:
     print("Continuing without serial port (triggers will be faked).")
     ser_port = None
     
+riponda_port = None
+if RIPONDA_ENABLED:
+    try:
+        riponda_port = serial.Serial(
+            port=RIPONDA_PORT_NAME,
+            baudrate=RIPONDA_BAUDRATE,
+            timeout=0 # IMPORTANT: Set timeout to 0 for non-blocking reads
+        )
+        riponda_port.reset_input_buffer()
+        print(f"Riponda response box initialized at {RIPONDA_PORT_NAME} ({RIPONDA_BAUDRATE} baud).")
+    except Exception as e:
+        print(f"Riponda port {RIPONDA_PORT_NAME} not found or could not be initialized. Error: {e}")
+        print("Continuing with keyboard-only responses.")
+        riponda_port = None
+else:
+    print("Riponda response box disabled in settings. Using keyboard only.")
+
 # Store positions of the last two trials for the 2-back check
 pos_minus_1 = None
 pos_minus_2 = None
@@ -179,7 +205,46 @@ pos_minus_2 = None
 # --- Helper function wrapper to save data and quit ---
 def quit_experiment():
     """Wrapper function to call the utility save_and_quit."""
+    print("Quitting experiment... closing ports.")
+    if ser_port:
+        ser_port.close()
+    if riponda_port:
+        riponda_port.close()
     utils.save_and_quit(win, unique_filename, all_data)
+
+# --- HELPER FUNCTION: Wait for Riponda OR Keyboard (Any Key) ---
+def wait_for_response():
+    """
+    Waits indefinitely for either a keyboard press or a Riponda button press.
+    If Escape is pressed on keyboard, quits the experiment.
+    """
+    event.clearEvents()
+    if riponda_port:
+        riponda_port.reset_input_buffer()
+
+    while True:
+        # 1. Check Keyboard
+        keys_pressed = event.getKeys()
+        if keys_pressed:
+            if 'escape' in keys_pressed:
+                quit_experiment()
+            return # Exit loop to continue script
+
+        # 2. Check Riponda
+        if riponda_port and riponda_port.in_waiting >= 6:
+            try:
+                packet = riponda_port.read(6)
+                # 0x6b is 'k' (key press)
+                if len(packet) == 6 and packet[0] == 0x6b:
+                    return # Exit loop on valid press
+                elif len(packet) == 6:
+                     # If packet is valid length but not a keypress, clear buffer
+                     riponda_port.reset_input_buffer()
+            except Exception:
+                riponda_port.reset_input_buffer()
+
+        # Small pause to prevent CPU hogging
+        core.wait(0.01)
 
 # --- Instruction Window ---
 keys_list_str = ", ".join([f"'{k}'" for k in keys])
@@ -192,19 +257,42 @@ instruction_message = visual.TextStim(
 instruction_message.draw()
 win.flip()
 
-# Wait only for the spacebar press
-key_pressed = event.waitKeys(keyList=['space', 'escape'])
+# Wait for response (Any Keyboard Key or Riponda)
+wait_for_response()
 
-if 'escape' in key_pressed:
-    quit_experiment() 
+# --- No-Go Specific Instructions (Cat vs Dog) ---
+if NO_GO_TRIALS_ENABLED:
+    try:
+        # Try to get from text config if user added it
+        nogo_inst_text = get_text_with_newlines('Instructions', 'nogo_screen')
+    except:
+        # Fallback text if not in INI file yet
+        nogo_inst_text = (
+            "Attention:\n\n"
+            "Usually, you will see a DOG. Press the button for the location of the dog.\n\n"
+            "However, if you see a CAT, do NOT press any button.\n"
+            "Simply wait for the image to disappear.\n\n"
+            "Press any button to continue."
+        )
+        
+    nogo_message = visual.TextStim(
+        win, text=nogo_inst_text, color='black', height=30, 
+        wrapWidth=1000, alignHoriz='center', alignVert='center', font='Arial'
+    )
+    nogo_message.draw()
+    win.flip()
     
+    # Wait for response (Any Keyboard Key or Riponda)
+    wait_for_response()
+
 # --- Mind Wandering Probe Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
     show_mw_instructions_and_quiz(
         win, 
         quit_experiment, 
         RUN_COMPREHENSION_QUIZ, 
-        text_filename
+        text_filename,
+        riponda_port=riponda_port
     )
     
 # --- Initial 'Start Experiment' window ---
@@ -219,11 +307,21 @@ start_message = visual.TextStim(win, text=start_text, color='black', height=40, 
 start_message.draw()
 win.flip()
 
-# --- CHANGED: Added waitKeys check ---
+# Wait for response (ONLY SPACE on Keyboard, Ignore Riponda)
 key_pressed = event.waitKeys(keyList=['space', 'escape'])
 if 'escape' in key_pressed:
     quit_experiment()
+    
 utils.send_trigger_pulse(ser_port, start_trigger_value)
+
+prep_text = get_text_with_newlines('Screens', 'countdown_message')
+
+prep_message = visual.TextStim(win, text=prep_text, color='black', height=40, wrapWidth=1000, font='Arial')
+prep_message.draw()
+win.flip()
+
+# Wait automatically for 10 seconds
+core.wait(10.0)
 
 # --- Practice Loop ---
 for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED else []:
@@ -231,7 +329,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     pos_minus_1 = None
     pos_minus_2 = None
     
-    # ... (No-Go trial selection logic remains the same)
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
         num_nogo_per_block = NUM_NO_GO_TRIALS
@@ -326,7 +423,26 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                 target_image.draw()
                 win.flip()
             
-                responses = event.getKeys(keyList=keys + ['escape'], timeStamped=cumulative_timer)
+                responses = None
+                kb_responses = event.getKeys(keyList=keys + ['escape'], timeStamped=cumulative_timer)
+                if kb_responses:
+                    responses = kb_responses
+                
+                if not responses and riponda_port and riponda_port.in_waiting >= 6: 
+                    try:
+                        packet = riponda_port.read(6) 
+                        rt = cumulative_timer.getTime()
+                        
+                        if packet[0] == 0x6b and packet[1] in riponda_byte_map:
+                            key = riponda_byte_map[packet[1]]
+                            responses = [(key, rt)]
+                        
+                        riponda_port.reset_input_buffer() 
+                            
+                    except Exception as e:
+                        print(f"Riponda read error: {e}")
+                        riponda_port.reset_input_buffer()
+                
                 if responses and not response_logged:
                     pressed_key, rt = responses[0]
                     
@@ -404,11 +520,26 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                 border_circle.draw()
                 target_image.draw()
                 win.flip()
-            
-                response_keys = event.getKeys(keyList=keys + ['escape'])
-            
-                if response_keys:
-                    pressed_key = response_keys[0]
+                
+                pressed_key = None
+                kb_keys = event.getKeys(keyList=keys + ['escape'])
+                if kb_keys:
+                    pressed_key = kb_keys[0]
+
+                if not pressed_key and riponda_port and riponda_port.in_waiting >= 6: 
+                    try:
+                        packet = riponda_port.read(6) 
+                        
+                        if packet[0] == 0x6b and packet[1] in riponda_byte_map:
+                            pressed_key = riponda_byte_map[packet[1]]
+                        
+                        riponda_port.reset_input_buffer() 
+                            
+                    except Exception as e:
+                        print(f"Riponda read error: {e}")
+                        riponda_port.reset_input_buffer()
+                
+                if pressed_key:
                 
                     if pressed_key == 'escape':
                         quit_experiment()
@@ -419,10 +550,10 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     pressed_key_pos = keys.index(pressed_key) + 1
                     
                     if was_correct:
-                        response_type_base = 71
+                        response_type_base = 71 
                         response_trigger = response_type_base + pressed_key_pos
                     else:
-                        incorrect_response_base = 81
+                        incorrect_response_base = 81 
                         response_trigger = incorrect_response_base + pressed_key_pos
                     
                     utils.send_trigger_pulse(ser_port, response_trigger)
@@ -466,7 +597,8 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         ser_port,
         MW_TESTING_INVOLVED, 
         NA_MW_RATING, 
-        quit_experiment
+        quit_experiment,
+        riponda_port=riponda_port
     )
     
     for d in block_data:
@@ -529,10 +661,9 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         win.flip()
         continuation_message.draw()
         win.flip()
-        # --- CHANGED: Added waitKeys check ---
-        key_pressed = event.waitKeys(keyList=['space', 'escape'])
-        if 'escape' in key_pressed:
-            quit_experiment()
+        
+        # Wait for response (Keyboard or Riponda)
+        wait_for_response()
 
         trigger_base = 80
         utils.send_trigger_pulse(ser_port, trigger_base + (practice_block_num + 1))
@@ -544,10 +675,9 @@ if PRACTICE_ENABLED:
     win.flip()
     end_practice_message.draw()
     win.flip()
-    # --- CHANGED: Added waitKeys check ---
-    key_pressed = event.waitKeys(keyList=['space', 'escape'])
-    if 'escape' in key_pressed:
-        quit_experiment()
+    
+    # Wait for response (Keyboard or Riponda)
+    wait_for_response()
     utils.send_trigger_pulse(ser_port, 99)
 
 # --- Main Experiment Loop ---
@@ -622,12 +752,10 @@ for block_num in range(1, NUM_BLOCKS + 1):
         core.wait(ISI_DURATION)
 
         if trial_in_block_num % 2 == 0:
-            # Pattern trial (Even trial number)
             target_stim_pos = current_pattern_sequence[pattern_index]
             pattern_index = (pattern_index + 1) % len(current_pattern_sequence)
             trial_type = 'P'
         else:
-            # Random trial (Odd trial number)
             target_stim_pos = random_positions_list[random_list_index]
             random_list_index += 1
             trial_type = 'R'
@@ -723,7 +851,26 @@ for block_num in range(1, NUM_BLOCKS + 1):
                 target_image.draw()
                 win.flip()
             
-                responses = event.getKeys(keyList=keys + ['escape'], timeStamped=cumulative_timer)
+                responses = None
+                kb_responses = event.getKeys(keyList=keys + ['escape'], timeStamped=cumulative_timer)
+                if kb_responses:
+                    responses = kb_responses
+                
+                if not responses and riponda_port and riponda_port.in_waiting >= 6: 
+                    try:
+                        packet = riponda_port.read(6) 
+                        rt = cumulative_timer.getTime()
+                        
+                        if packet[0] == 0x6b and packet[1] in riponda_byte_map:
+                            key = riponda_byte_map[packet[1]]
+                            responses = [(key, rt)]
+                        
+                        riponda_port.reset_input_buffer() 
+                            
+                    except Exception as e:
+                        print(f"Riponda read error: {e}")
+                        riponda_port.reset_input_buffer()
+                
                 if responses and not response_logged:
                     pressed_key, rt = responses[0]
                     
@@ -799,12 +946,26 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     stim_dict['stim'].draw()
                 border_circle.draw()
                 target_image.draw()
-                win.flip()
-            
-                response_keys = event.getKeys(keyList=keys + ['escape'])
-            
-                if response_keys:
-                    pressed_key = response_keys[0]
+                win.flip()            
+                pressed_key = None
+                kb_keys = event.getKeys(keyList=keys + ['escape'])
+                if kb_keys:
+                    pressed_key = kb_keys[0]
+
+                if not pressed_key and riponda_port and riponda_port.in_waiting >= 6: 
+                    try:
+                        packet = riponda_port.read(6)
+                        
+                        if packet[0] == 0x6b and packet[1] in riponda_byte_map:
+                            pressed_key = riponda_byte_map[packet[1]]
+                        
+                        riponda_port.reset_input_buffer() 
+                            
+                    except Exception as e:
+                        print(f"Riponda read error: {e}")
+                        riponda_port.reset_input_buffer()
+                
+                if pressed_key:
                 
                     if pressed_key == 'escape':
                         quit_experiment() 
@@ -862,7 +1023,8 @@ for block_num in range(1, NUM_BLOCKS + 1):
         ser_port,
         MW_TESTING_INVOLVED, 
         NA_MW_RATING, 
-        quit_experiment
+        quit_experiment,
+        riponda_port=riponda_port
     ) 
     
     for d in block_data:
@@ -924,10 +1086,10 @@ for block_num in range(1, NUM_BLOCKS + 1):
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
         win.flip()
         continuation_message.draw()
-        win.flip()
-        key_pressed = event.waitKeys(keyList=['space', 'escape'])
-        if 'escape' in key_pressed:
-            quit_experiment()
+        win.flip()            
+        
+        # Wait for response (Keyboard or Riponda)
+        wait_for_response()
 
         trigger_base = 10
         utils.send_trigger_pulse(ser_port, trigger_base + (block_num + 1))
@@ -938,8 +1100,15 @@ end_text = get_text_with_newlines('Screens', 'end_experiment')
 end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000, font='Arial')
 end_message.draw()
 win.flip()
-key_pressed = event.waitKeys(keyList=['space', 'escape'])
-if 'escape' in key_pressed:
-    quit_experiment()
+
+# Wait for response (Keyboard or Riponda)
+wait_for_response()
+
+if ser_port:
+    ser_port.close()
+if riponda_port:
+    riponda_port.close()
+print("All serial ports closed.")
+
 win.close()
 core.quit()

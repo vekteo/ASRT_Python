@@ -7,7 +7,8 @@ import experiment_utils as utils
 from config_helpers import get_text_with_newlines
 
 # --- MAIN PROBE FUNCTION ---
-def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, save_and_quit_func): # <-- CHANGED: Added ser_port
+# --- CHANGED: Added riponda_port=None ---
+def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, save_and_quit_func, riponda_port=None):
     """
     Displays the Mind Wandering probe (Q1) and branches to ask three follow-up 
     questions (Q2, Q3, Q4) based on the Q1 response (1,2=MW vs. 3,4=Non-MW).
@@ -18,6 +19,17 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
     """
     if not mw_testing_involved:
         return [na_mw_rating] * 4
+
+    # --- ADDED: Local Riponda map for MW screens (1, 2, 3, 4) ---
+    # Maps the "press" byte (from your test) directly to the number string
+    # 0x30 -> '1', 0x70 -> '2', 0xb0 -> '3', 0xf0 -> '4'
+    mw_riponda_map = {
+        48: '1',  # Button 1 Press
+        112: '2', # Button 2 Press
+        176: '3', # Button 3 Press
+        240: '4'  # Button 4 Press
+    }
+    # --- END ADD ---
 
     # --- Q1 SETUP: Primary Focus Question (Text from INI) ---
     primary_question = get_text_with_newlines('MW_Probe_Content', 'q1_primary_question', default="Q1: To what degree were you focusing on the task?")
@@ -30,7 +42,8 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q1_label_4', default="Completely"), 'desc': "4 / Completely On-Task / Highly Focused", 'x': 300}
     ]
 
-# Q2: Content of thoughts (Specific labels for MW-branch)
+    # ... (All other question detail lists remain unchanged) ...
+    # Q2: Content of thoughts (Specific labels for MW-branch)
     q2_mw_details = [
         {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q2_mw_label_1', default="I was thinking about nothing"), 'x': -300},
         {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q2_mw_label_2', default=""), 'x': -100},
@@ -64,18 +77,18 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
 
     # Q3: Concentration difficulty (Specific labels for Non-MW/On-Task branch)
     q3_on_task_details = [
-        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_1', default="Extremely difficult to concentrate"), 'x': -400},
-        {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_2', default=""), 'x': -150},
-        {'key': '3', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_3', default=""), 'x': 150},
-        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_4', default="Extremely easy to concentrate"), 'x': 400}
+        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_1', default="Extremely difficult to concentrate"), 'x': -300},
+        {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_2', default=""), 'x': -100},
+        {'key': '3', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_3', default=""), 'x': 100},
+        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q3_on_task_label_4', default="Extremely easy to concentrate"), 'x': 300}
     ]
 
     # Q4: Task Tiringness (Specific labels for Non-MW/On-Task branch)
     q4_on_task_details = [
-        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_1', default="Not at all tiring"), 'x': -400},
-        {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_2', default=""), 'x': -150},
-        {'key': '3', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_3', default=""), 'x': 150},
-        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_4', default="Extremely tiring"), 'x': 400}
+        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_1', default="Not at all tiring"), 'x': -300},
+        {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_2', default=""), 'x': -100},
+        {'key': '3', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_3', default=""), 'x': 100},
+        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_on_task_label_4', default="Extremely tiring"), 'x': 300}
     ]
 
     # --- FOLLOW-UP QUESTION BANK (Text from INI) ---
@@ -115,8 +128,8 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
             buttons_list.append({'rect': rect, 'number': number_stim, 'label': label_stim, 'rating': detail['key']})
         return buttons_list
 
-    # This helper function now sends triggers ---
-    def display_and_collect_rating(question_text, buttons_details, question_onset_trigger, response_base_trigger):
+    # --- CHANGED: Added riponda_port and byte_map to signature ---
+    def display_and_collect_rating(question_text, buttons_details, question_onset_trigger, response_base_trigger, riponda_port=None, byte_map=None):
         question_stim = visual.TextStim(win, text=question_text, color='black', height=40, pos=(0, 200), wrapWidth=1000, font='Arial')
         
         buttons = draw_buttons(buttons_details)
@@ -129,8 +142,40 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         utils.send_trigger_pulse(ser_port, question_onset_trigger)
         print(f"MW Question Onset Trigger: {question_onset_trigger}")
         valid_keys = ['1', '2', '3', '4', 'escape']
-        response = event.waitKeys(keyList=valid_keys)
-        pressed_key = response[0]
+        
+        # --- CHANGED: Replaced event.waitKeys() with a custom polling loop ---
+        pressed_key = None
+        while pressed_key is None:
+            # 1. Check Keyboard
+            kb_responses = event.getKeys(keyList=valid_keys)
+            if kb_responses:
+                pressed_key = kb_responses[0]
+                break # Exit loop on keyboard press
+
+            # 2. Check Riponda
+            if riponda_port and byte_map and riponda_port.in_waiting >= 6:
+                try:
+                    # Read the 6-byte packet
+                    packet = riponda_port.read(6)
+                    
+                    # Check if it's a valid key "press" packet
+                    # packet[0] == 0x6b ('k')
+                    # packet[1] is the button ID (48, 112, 176, 240)
+                    if packet[0] == 0x6b and packet[1] in byte_map:
+                        pressed_key = byte_map[packet[1]] # Get '1', '2', '3', or '4'
+                        riponda_port.reset_input_buffer()
+                        break # Exit loop on Riponda press
+                    else:
+                        # It's a "release" packet or other junk, ignore it
+                        riponda_port.reset_input_buffer()
+                        
+                except Exception as e:
+                    print(f"Riponda read error: {e}")
+                    riponda_port.reset_input_buffer()
+
+            # Don't overwhelm the CPU
+            core.wait(0.001)
+        # --- END CHANGE ---
 
         if pressed_key == 'escape':
             save_and_quit_func()
@@ -180,7 +225,9 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         primary_question, 
         q1_button_details,
         question_onset_trigger=171,
-        response_base_trigger=180
+        response_base_trigger=180,
+        riponda_port=riponda_port,  # <-- ADDED
+        byte_map=mw_riponda_map      # <-- ADDED
     )
     if rating_1 == 'quit':
         return [na_mw_rating] * 4
@@ -216,7 +263,9 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
             full_question, 
             q_data['details'],
             q_onset_trigger,
-            q_response_base
+            q_response_base,
+            riponda_port=riponda_port,  # <-- ADDED
+            byte_map=mw_riponda_map      # <-- ADDED
         )
         
         if rating_n == 'quit':
