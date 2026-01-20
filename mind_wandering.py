@@ -13,7 +13,6 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
     if not mw_testing_involved:
         return [na_mw_rating] * 4
 
-    # Local Riponda map for MW screens (1, 2, 3, 4)
     mw_riponda_map = {
         48: '1',  # Button 1 Press
         112: '2', # Button 2 Press
@@ -123,7 +122,6 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         
         valid_keys = ['1', '2', '3', '4', 'escape']
         
-        # Custom polling loop for Keyboard OR Riponda
         pressed_key = None
         while pressed_key is None:
             # 1. Check Keyboard
@@ -205,7 +203,7 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         # MW Branch Trigger Logic
         onset_triggers = [172, 173, 174]
         response_bases = [40, 45, 50] 
-    else: # rating_1 is '3' or '4'
+    else:
         follow_up_data = non_mw_questions
         # On-Task Branch Trigger Logic
         onset_triggers = [175, 176, 177]

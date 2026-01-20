@@ -1,5 +1,4 @@
 import random
-# Note: configparser and numpy are not needed here, only random is required for sampling
 
 def select_nogo_trials_in_block(block_indices, pre_block_trials, num_nogo_p, num_nogo_r):
     """
@@ -15,7 +14,6 @@ def select_nogo_trials_in_block(block_indices, pre_block_trials, num_nogo_p, num
     Returns:
         list: A sorted list of indices within the block that should be no-go trials.
     """
-    # Filter for eligible 'P' and 'R' trials (skipping the first two trials in the block)
     p_indices = [i for i, trial in enumerate(pre_block_trials) if trial['trial_type'] == 'P' and trial['trial_in_block_num'] > 2]
     r_indices = [i for i, trial in enumerate(pre_block_trials) if trial['trial_type'] == 'R' and trial['trial_in_block_num'] > 2]
 
@@ -45,7 +43,6 @@ def select_nogo_trials_in_block(block_indices, pre_block_trials, num_nogo_p, num
     # Fallback to general pool if specific type selection fails repeatedly
     eligible_indices = p_indices + r_indices
     if num_nogo_p + num_nogo_r > len(eligible_indices):
-        # This should have been caught by initial checks, but acts as a safeguard
         raise ValueError(f"Not enough eligible trials for no-go selection. Requested: {num_nogo_p + num_nogo_r}, Available: {len(eligible_indices)}")
 
     attempts = 0

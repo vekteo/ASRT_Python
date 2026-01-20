@@ -152,7 +152,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
             pressed_key = None
             while pressed_key is None:
                 # 1. Check Keyboard
-                kb_responses = event.getKeys(keyList=['space', 'escape'])
+                kb_responses = event.getKeys()
                 if kb_responses:
                     pressed_key = kb_responses[0]
                     break
@@ -171,7 +171,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                         riponda_port.reset_input_buffer()
                 core.wait(0.001)
             # --- END CHANGE ---
-
             if pressed_key == 'escape':
                 save_and_quit()
 
@@ -195,7 +194,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
     # --- CHANGED: Replaced event.waitKeys() with polling loop ---
     pressed_key = None
     while pressed_key is None:
-        kb_responses = event.getKeys(keyList=['space', 'escape'])
+        kb_responses = event.getKeys()
         if kb_responses:
             pressed_key = kb_responses[0]
             break
@@ -231,7 +230,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
         # --- CHANGED: Replaced event.waitKeys() with polling loop ---
         pressed_key = None
         while pressed_key is None:
-            kb_responses = event.getKeys(keyList=['space', 'escape'])
+            kb_responses = event.getKeys()
             if kb_responses:
                 pressed_key = kb_responses[0]
                 break
@@ -273,7 +272,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
         # --- CHANGED: Replaced event.waitKeys() with polling loop ---
         pressed_key = None
         while pressed_key is None:
-            kb_responses = event.getKeys(keyList=['space', 'escape'])
+            kb_responses = event.getKeys()
             if kb_responses:
                 pressed_key = kb_responses[0]
                 break

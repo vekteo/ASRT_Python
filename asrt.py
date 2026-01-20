@@ -1,4 +1,3 @@
-# Import the necessary PsychoPy libraries and other modules
 from psychopy import visual, core, event, gui
 import random
 import csv
@@ -10,9 +9,10 @@ from datetime import datetime
 from nogo_logic import select_nogo_trials_in_block
 from mind_wandering import show_mind_wandering_probe
 from config_helpers import get_text_with_newlines, set_global_text_config
-import serial 
-import experiment_utils as utils 
-from mw_instructions import show_mw_instructions_and_quiz 
+import serial
+import experiment_utils as utils
+from mw_instructions import show_mw_instructions_and_quiz
+import gc
 
 # --- GUI for Participant Info ---
 expInfo = {'participant': '1', 'session': '1', 'language': ['en', 'es']}
@@ -20,18 +20,31 @@ dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
 if not dlg.OK:
     core.quit()
 
-# --- Generate a unique filename with timestamp ---
+# --- Generate unique filename ---
 timestamp_str = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 data_folder = 'data'
 if not os.path.exists(data_folder):
     os.makedirs(data_folder)
-
 unique_filename = os.path.join(
     data_folder,
     f"participant_{expInfo['participant']}_session_{expInfo['session']}_{timestamp_str}_data.csv"
 )
 
-# --- Load Experiment Settings from a separate file ---
+# --- Define Fieldnames for CSV ---
+fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
+              'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
+
+# --- Write initial CSV Header ---
+try:
+    with open(unique_filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+    print(f"Data file initialized: {unique_filename}")
+except Exception as e:
+    print(f"ERROR: Failed to write initial CSV header: {e}")
+    core.quit()
+
+# --- Load experiment settings ---
 config = configparser.ConfigParser()
 try:
     config.read('experiment_settings.ini')
@@ -51,12 +64,12 @@ try:
     FEEDBACK_ENABLED = config.getboolean('Experiment', 'feedback_enabled')
     
     KEYS_STR = config.get('Experiment', 'response_keys_list')
-    keys = [k.strip() for k in KEYS_STR.split(',')] 
+    keys = [k.strip() for k in KEYS_STR.split(',')]
     target_image_path = config.get('Experiment', 'target_image_filename')
     nogo_image_path = config.get('Experiment', 'nogo_image_filename')
 
     if len(keys) != 4:
-        print("Error: The 'response_keys_list' in settings must contain exactly 4 keys (comma-separated).")
+        print("Error: The 'response_keys_list' in settings must contain exactly 4 keys.")
         core.quit()
         
     RIPONDA_ENABLED = config.getboolean('Experiment', 'riponda_enabled', fallback=False)
@@ -67,7 +80,7 @@ except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
     core.quit()
 
-# --- LOAD ALL EXPERIMENT TEXT ---
+# --- Load experiment text ---
 language_code = expInfo['language']
 text_filename = f'experiment_text_{language_code}.ini'
 text_config = configparser.ConfigParser()
@@ -84,194 +97,178 @@ try:
     text_config.read_string(file_content)
     
     if not text_config.sections():
-        raise FileNotFoundError(f"Text configuration file '{text_filename}' is empty.")
+        raise FileNotFoundError(f"Text file '{text_filename}' is empty.")
 except Exception as e:
     print(f"Error loading experiment text file: {e}")
     core.quit()
 
 set_global_text_config(text_config)
 
-# --- Define a list of possible sequences ---
+# --- Define sequences ---
 all_sequences = [
-    [1, 2, 3, 4],
-    [1, 2, 4, 3],
-    [1, 3, 2, 4],
-    [1, 3, 4, 2],
-    [1, 4, 3, 2],
-    [1, 4, 2, 3]
+    [1, 2, 3, 4], [1, 2, 4, 3], [1, 3, 2, 4],
+    [1, 3, 4, 2], [1, 4, 3, 2], [1, 4, 2, 3]
 ]
-
 participant_num = int(expInfo['participant'])
 sequence_index = (participant_num - 1) % len(all_sequences)
 pattern_sequence = all_sequences[sequence_index]
 sequence_to_save = str(pattern_sequence).replace('[', '').replace(']', '').replace(' ', '')
 
-# --- Setup the PsychoPy window and stimuli ---
+# --- Setup window and stimuli ---
 win = visual.Window(
-    size=[1920, 1080],
-    fullscr=True,
-    monitor="testMonitor",
-    units="pix",
-    color='white',
-    multiSample=True,
-    numSamples=16
+    size=[1920, 1080], fullscr=True, monitor="testMonitor",
+    units="pix", color='white', multiSample=True, numSamples=16
 )
-
 circle_radius = 60
 y_pos = 0.0
 x_positions = [-240, -80, 80, 240]
 
 stimuli = []
 for x, key in zip(x_positions, keys):
-    circle = visual.Circle(
-        win=win, radius=circle_radius, fillColor='white', lineColor='black', lineWidth=3, pos=(x, y_pos)
-    )
+    circle = visual.Circle(win=win, radius=circle_radius, fillColor='white', lineColor='black', lineWidth=3, pos=(x, y_pos))
     stimuli.append({'stim': circle, 'key': key})
 
-# --- Hard-coded Riponda Byte Map ---
-riponda_byte_map = {
-    48: keys[0],  # Button 1
-    112: keys[1], # Button 2
-    176: keys[2], # Button 3
-    240: keys[3]  # Button 4
-}
-if RIPONDA_ENABLED:
-    print(f"Riponda XID byte map created: {riponda_byte_map}")
+image_size = circle_radius * 2 - 3
+border_circles = []
+image_stims = []
+for s in stimuli:
+    border = visual.Circle(win=win, radius=circle_radius, fillColor='black', pos=s['stim'].pos)
+    border_circles.append(border)
+    img = visual.ImageStim(win=win, image=target_image_path, size=image_size, pos=s['stim'].pos)
+    image_stims.append(img)
 
-# State variables
-all_data = []
-total_trial_count = 0
-header_written = False
-NA_MW_RATING = 'NA'
+# Pre-create reusable TextStims
+feedback_header = visual.TextStim(win, text='', color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
+feedback_stats = visual.TextStim(win, text='', color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
+feedback_performance = visual.TextStim(win, text='', color='green', height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
+continuation_message_text = visual.TextStim(win, text='', color='black', height=40, wrapWidth=1000, font='Arial')
 
-# --- Initialize Serial Port for Triggers ---
+# --- Riponda Byte Map ---
+riponda_byte_map = {48: keys[0], 112: keys[1], 176: keys[2], 240: keys[3]}
+
+# --- Initialize serial ports ---
 ser_port = None
 COM_PORT_NAME = 'COM3'
-
 try:
-    ser_port = serial.Serial(
-        port=COM_PORT_NAME, baudrate=2000000, timeout=1, rtscts=False, dsrdtr=False, xonxoff=False
-    )
+    ser_port = serial.Serial(port=COM_PORT_NAME, baudrate=115200, timeout=1)
     ser_port.reset_input_buffer()
     ser_port.reset_output_buffer()
     ser_port.write(bytes([0]))
     ser_port.flush()
-    print(f"Serial port initialized at {COM_PORT_NAME} (2,000,000 baud).")
 except Exception as e:
-    print(f"Serial port {COM_PORT_NAME} not found or could not be initialized. Error: {e}")
-    print("Continuing without serial port (triggers will be faked).")
+    print(f"Serial port {COM_PORT_NAME} not found: {e}")
     ser_port = None
-    
+
 riponda_port = None
 if RIPONDA_ENABLED:
     try:
-        riponda_port = serial.Serial(
-            port=RIPONDA_PORT_NAME, baudrate=RIPONDA_BAUDRATE, timeout=0 
-        )
+        riponda_port = serial.Serial(port=RIPONDA_PORT_NAME, baudrate=RIPONDA_BAUDRATE, timeout=0)
         riponda_port.reset_input_buffer()
-        print(f"Riponda response box initialized at {RIPONDA_PORT_NAME} ({RIPONDA_BAUDRATE} baud).")
     except Exception as e:
-        print(f"Riponda port {RIPONDA_PORT_NAME} not found or could not be initialized. Error: {e}")
-        print("Continuing with keyboard-only responses.")
+        print(f"Riponda port {RIPONDA_PORT_NAME} not found: {e}")
         riponda_port = None
-else:
-    print("Riponda response box disabled in settings. Using keyboard only.")
 
-pos_minus_1 = None
-pos_minus_2 = None
-
-# --- Helper function wrapper to save data and quit ---
+# --- Helper Functions ---
 def quit_experiment():
-    """Wrapper function to call the utility save_and_quit."""
-    print("Quitting experiment... closing ports.")
     if ser_port:
-        ser_port.close()
+        try:
+            ser_port.reset_input_buffer()
+            ser_port.reset_output_buffer()
+            ser_port.close()
+        except Exception:
+            pass
     if riponda_port:
-        riponda_port.close()
-    utils.save_and_quit(win, unique_filename, all_data)
+        try:
+            riponda_port.reset_input_buffer()
+            riponda_port.close()
+        except Exception:
+            pass
+    if win:
+        try:
+            win.close()
+        except Exception:
+            pass
+    core.quit()
 
-# --- HELPER FUNCTION: Wait for Riponda OR Keyboard ---
 def wait_for_response():
     event.clearEvents()
     if riponda_port:
-        riponda_port.reset_input_buffer()
-
+        try:
+            riponda_port.reset_input_buffer()
+        except Exception:
+            pass
     while True:
-        # 1. Check Keyboard
         keys_pressed = event.getKeys()
         if keys_pressed:
             if 'escape' in keys_pressed:
                 quit_experiment()
-            return 
-
-        # 2. Check Riponda
+            return
         if riponda_port and riponda_port.in_waiting >= 6:
             try:
                 packet = riponda_port.read(6)
                 if len(packet) == 6 and packet[0] == 0x6b:
-                    return 
+                    return
                 elif len(packet) == 6:
-                     riponda_port.reset_input_buffer()
+                    riponda_port.reset_input_buffer()
             except Exception:
-                riponda_port.reset_input_buffer()
+                try:
+                    riponda_port.reset_input_buffer()
+                except Exception:
+                    pass
         core.wait(0.01)
 
-# --- Instruction Window ---
-keys_list_str = ", ".join([f"'{k}'" for k in keys])
-instruction_text = get_text_with_newlines('Instructions', 'welcome_screen').format(keys_list=keys_list_str)
-instruction_message = visual.TextStim(
-    win, text=instruction_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center', font='Arial'
-)
+# --- Instructions ---
+instruction_text = get_text_with_newlines('Instructions', 'welcome_screen').format(keys_list=", ".join([f"'{k}'" for k in keys]))
+instruction_message = visual.TextStim(win, text=instruction_text, color='black', height=30, wrapWidth=1000, font='Arial')
 instruction_message.draw()
 win.flip()
 wait_for_response()
 
-# --- No-Go Specific Instructions ---
+# --- No-Go instructions ---
 if NO_GO_TRIALS_ENABLED:
     try:
         nogo_inst_text = get_text_with_newlines('Instructions', 'nogo_screen')
     except:
-        nogo_inst_text = (
-            "Attention:\n\nUsually, you will see a DOG. Press the button for the location of the dog.\n\n"
-            "However, if you see a CAT, do NOT press any button.\nSimply wait for the image to disappear.\n\n"
-            "Press any button to continue."
-        )
-    nogo_message = visual.TextStim(
-        win, text=nogo_inst_text, color='black', height=30, wrapWidth=1000, alignHoriz='center', alignVert='center', font='Arial'
-    )
+        nogo_inst_text = "Attention:\n\nPress buttons for DOG, do NOT press for CAT.\n\nPress any button to continue."
+    nogo_message = visual.TextStim(win, text=nogo_inst_text, color='black', height=30, wrapWidth=1000, font='Arial')
     nogo_message.draw()
     win.flip()
     wait_for_response()
 
-# --- Mind Wandering Probe Instructions & Quiz ---
+# --- MW Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
-    show_mw_instructions_and_quiz(
-        win, quit_experiment, RUN_COMPREHENSION_QUIZ, text_filename, riponda_port=riponda_port
-    )
-    
-# --- Initial 'Start Experiment' window ---
+    show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, text_filename, riponda_port=riponda_port)
+
+# --- Start Experiment Screen ---
 if PRACTICE_ENABLED:
     start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
-    start_trigger_value = 90 
+    start_trigger_value = 90
 else:
     start_text = get_text_with_newlines('Screens', 'start_main')
     start_trigger_value = 11
-
 start_message = visual.TextStim(win, text=start_text, color='black', height=40, wrapWidth=1000, font='Arial')
 start_message.draw()
 win.flip()
 
+# Only space starts the task
 key_pressed = event.waitKeys(keyList=['space', 'escape'])
 if 'escape' in key_pressed:
     quit_experiment()
-    
+
 utils.send_trigger_pulse(ser_port, start_trigger_value)
 
+# --- Countdown ---
 prep_text = get_text_with_newlines('Screens', 'countdown_message')
 prep_message = visual.TextStim(win, text=prep_text, color='black', height=40, wrapWidth=1000, font='Arial')
 prep_message.draw()
 win.flip()
 core.wait(10.0)
+
+# --- State variables ---
+total_trial_count = 0
+NA_MW_RATING = 'NA'
+pos_minus_1 = None
+pos_minus_2 = None
 
 # --- Practice Loop ---
 for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED else []:
@@ -333,13 +330,11 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         image_path_to_use = nogo_image_path if is_nogo else target_image_path
             
         stimuli[target_stim_index]['stim'].fillColor = 'blue'
-        border_circle = visual.Circle(
-            win=win, radius=circle_radius, fillColor='black', pos=stimuli[target_stim_index]['stim'].pos
-        )
-        image_size = circle_radius * 2 - 3
-        target_image = visual.ImageStim(
-            win=win, image=image_path_to_use, size=image_size, pos=stimuli[target_stim_index]['stim'].pos
-        )
+        border = border_circles[target_stim_index]
+        target_image = image_stims[target_stim_index]
+        target_image.image = image_path_to_use
+        target_image.size = image_size
+        target_image.pos = stimuli[target_stim_index]['stim'].pos
         
         trial_trigger = (251 if is_nogo else 151) + target_stim_pos
         utils.send_trigger_pulse(ser_port, trial_trigger)
@@ -352,7 +347,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             while cumulative_timer.getTime() < NOGO_TRIAL_DURATION:
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
-                border_circle.draw()
+                border.draw()
                 target_image.draw()
                 win.flip()
             
@@ -371,7 +366,10 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
                         print(f"Riponda read error: {e}")
-                        riponda_port.reset_input_buffer()
+                        try:
+                            riponda_port.reset_input_buffer()
+                        except Exception:
+                            pass
                 
                 if responses and not response_logged:
                     pressed_key, rt = responses[0]
@@ -394,7 +392,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'trial_type': trial_type,
                         'probability_type': probability_type,
                         'sequence_used': sequence_to_save,
-                        'stimulus_position_num': target_stim_pos,
+                        'metric_position_num': target_stim_pos,
                         'rt_non_cumulative_s': rt,
                         'rt_cumulative_s': rt,
                         'correct_key_pressed': 'NoGo',
@@ -441,13 +439,12 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             while not correct_response_given:
                 if 'escape' in event.getKeys():
                     quit_experiment()
-            
+                
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
-                border_circle.draw()
+                border.draw()
                 target_image.draw()
                 win.flip()
-                
                 pressed_key = None
                 kb_keys = event.getKeys(keyList=keys + ['escape'])
                 if kb_keys:
@@ -461,7 +458,10 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
                         print(f"Riponda read error: {e}")
-                        riponda_port.reset_input_buffer()
+                        try:
+                            riponda_port.reset_input_buffer()
+                        except Exception:
+                            pass
                 
                 if pressed_key:
                     if pressed_key == 'escape':
@@ -511,7 +511,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         if 'escape' in event.getKeys():
             quit_experiment()
 
-    # --- Mind Wandering Probe for Practice Block ---
     mw_ratings = show_mind_wandering_probe(
         win, ser_port, MW_TESTING_INVOLVED, NA_MW_RATING, quit_experiment, riponda_port=riponda_port
     )
@@ -522,18 +521,14 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         d['mind_wandering_rating_3'] = mw_ratings[2]
         d['mind_wandering_rating_4'] = mw_ratings[3]
 
-    all_data.extend(block_data)
-    
-    with open(unique_filename, 'w', newline='') as csvfile:
-        fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
-                      'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(all_data)
+    try:
+        with open(unique_filename, 'a', newline='') as csvfile: 
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writerows(block_data)
+        print(f"Data for Practice Block {practice_block_num} saved incrementally.")
+    except Exception as e:
+        print(f"ERROR: Failed to save incremental data for Practice Block {practice_block_num}: {e}")
 
-    print(f"Data for Practice Block {practice_block_num} saved.")
-
-    # --- Display feedback for 3 seconds ---
     if FEEDBACK_ENABLED:
         correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
         total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
@@ -552,37 +547,32 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
             performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
             performance_color = 'green'
 
-        feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
-        feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
-        
-        feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
-        feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
-        feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
-        
-        win.flip()
+        feedback_header.text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
+        feedback_stats.text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
+        feedback_performance.text = performance_message
+        feedback_performance.color = performance_color
+
         feedback_header.draw()
         feedback_stats.draw()
         feedback_performance.draw()
-
         utils.send_trigger_pulse(ser_port, 161)
         win.flip()
         core.wait(3)
+    
+    block_data = [] 
+    gc.collect() 
 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_practice')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
-        win.flip()
         continuation_message.draw()
         win.flip()
-        
         wait_for_response()
-
         utils.send_trigger_pulse(ser_port, 98)
-        
+
 if PRACTICE_ENABLED:
     end_practice_text = get_text_with_newlines('Screens', 'end_practice')
     end_practice_message = visual.TextStim(win, text=end_practice_text, color='black', height=40, wrapWidth=1000, font='Arial')
-    win.flip()
     end_practice_message.draw()
     win.flip()
     wait_for_response()
@@ -701,13 +691,11 @@ for block_num in range(1, NUM_BLOCKS + 1):
         image_path_to_use = nogo_image_path if is_nogo else target_image_path
             
         stimuli[target_stim_index]['stim'].fillColor = 'blue'
-        border_circle = visual.Circle(
-            win=win, radius=circle_radius, fillColor='black', pos=stimuli[target_stim_index]['stim'].pos
-        )
-        image_size = circle_radius * 2 - 3
-        target_image = visual.ImageStim(
-            win=win, image=image_path_to_use, size=image_size, pos=stimuli[target_stim_index]['stim'].pos
-        )
+        border = border_circles[target_stim_index]
+        target_image = image_stims[target_stim_index]
+        target_image.image = image_path_to_use
+        target_image.size = image_size
+        target_image.pos = stimuli[target_stim_index]['stim'].pos
         
         utils.send_trigger_pulse(ser_port, trial_trigger)
         print(f"Trial {total_trial_count} onset trigger: {trial_trigger}")
@@ -721,7 +709,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     quit_experiment()
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
-                border_circle.draw()
+                border.draw()
                 target_image.draw()
                 win.flip()
             
@@ -740,7 +728,10 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
                         print(f"Riponda read error: {e}")
-                        riponda_port.reset_input_buffer()
+                        try:
+                            riponda_port.reset_input_buffer()
+                        except Exception:
+                            pass
                 
                 if responses and not response_logged:
                     pressed_key, rt = responses[0]
@@ -808,10 +799,10 @@ for block_num in range(1, NUM_BLOCKS + 1):
             while not correct_response_given:
                 if 'escape' in event.getKeys():
                     quit_experiment()
-            
+                
                 for stim_dict in stimuli:
                     stim_dict['stim'].draw()
-                border_circle.draw()
+                border.draw()
                 target_image.draw()
                 win.flip()            
                 pressed_key = None
@@ -827,7 +818,10 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
                         print(f"Riponda read error: {e}")
-                        riponda_port.reset_input_buffer()
+                        try:
+                            riponda_port.reset_input_buffer()
+                        except Exception:
+                            pass
                 
                 if pressed_key:
                     if pressed_key == 'escape':
@@ -877,7 +871,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
         if 'escape' in event.getKeys():
             quit_experiment()
     
-    # --- Mind Wandering Probe for Main Block ---
     mw_ratings = show_mind_wandering_probe(
         win, ser_port, MW_TESTING_INVOLVED, NA_MW_RATING, quit_experiment, riponda_port=riponda_port
     ) 
@@ -887,18 +880,15 @@ for block_num in range(1, NUM_BLOCKS + 1):
         d['mind_wandering_rating_3'] = mw_ratings[2]
         d['mind_wandering_rating_4'] = mw_ratings[3]
 
-    all_data.extend(block_data)
     
-    with open(unique_filename, 'w', newline='') as csvfile:
-        fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
-                      'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(all_data)
+    try:
+        with open(unique_filename, 'a', newline='') as csvfile: 
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writerows(block_data)
+        print(f"Data for Main Block {block_num} saved incrementally.")
+    except Exception as e:
+        print(f"ERROR: Failed to save incremental data for Main Block {block_num}: {e}")
 
-    print(f"Data for Main Block {block_num} saved.")
-
-    # --- Display feedback for 3 seconds ---
     if FEEDBACK_ENABLED:
         correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
         total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
@@ -917,14 +907,11 @@ for block_num in range(1, NUM_BLOCKS + 1):
             performance_message = get_text_with_newlines('Screens', 'feedback_good_job')
             performance_color = 'green'
 
-        feedback_header_text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
-        feedback_stats_text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
-        
-        feedback_header = visual.TextStim(win, text=feedback_header_text, color='black', height=40, pos=(0, 100), wrapWidth=1000, font='Arial')
-        feedback_stats = visual.TextStim(win, text=feedback_stats_text, color='black', height=30, pos=(0, 0), wrapWidth=1000, font='Arial')
-        feedback_performance = visual.TextStim(win, text=performance_message, color=performance_color, height=40, pos=(0, -100), wrapWidth=1000, font='Arial')
-        
-        win.flip()
+        feedback_header.text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
+        feedback_stats.text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
+        feedback_performance.text = performance_message
+        feedback_performance.color = performance_color
+
         feedback_header.draw()
         feedback_stats.draw()
         feedback_performance.draw()
@@ -936,7 +923,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
     if block_num < NUM_BLOCKS:
         continuation_text = get_text_with_newlines('Screens', 'next_main')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
-        win.flip()
         continuation_message.draw()
         win.flip()            
         wait_for_response()
@@ -944,18 +930,14 @@ for block_num in range(1, NUM_BLOCKS + 1):
         trigger_base = 10
         utils.send_trigger_pulse(ser_port, trigger_base + (block_num + 1))
 
-print(f"Data saved successfully to {unique_filename}")
+    block_data = []
+    gc.collect() 
+
+print(f"All experiment data saved incrementally to {unique_filename}")
 end_text = get_text_with_newlines('Screens', 'end_experiment')
 end_message = visual.TextStim(win, text=end_text, color='black', height=40, wrapWidth=1000, font='Arial')
 end_message.draw()
 win.flip()
 wait_for_response()
 
-if ser_port:
-    ser_port.close()
-if riponda_port:
-    riponda_port.close()
-print("All serial ports closed.")
-
-win.close()
-core.quit()
+quit_experiment()
