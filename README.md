@@ -76,7 +76,7 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 
 ## Installation and Usage
 
-1. **Verify Settings:** Open `experiment_settings.ini` to configure your trial numbers and COM ports.
+1. **Verify Settings:** Open `experiment_settings.ini` to configure your experiment.
 2. **Run Experiment:** Launch `asrt.py` using a Python environment with PsychoPy installed.
 3. **Session Info:** Enter participant number (integer) and select the language in the GUI prompt.
 4. **Follow Prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
