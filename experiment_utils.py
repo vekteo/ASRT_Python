@@ -17,7 +17,6 @@ def send_trigger_pulse(ser_port, trigger_value, pulse_duration=0.05):
         except Exception as e:
             print(f"Error writing to serial port: {e}")
     else:
-        # Fakes the trigger if the serial port isn't connected
         print(f"Faking serial port trigger: {trigger_value}")
 
 def save_and_quit(win, unique_filename, all_data):

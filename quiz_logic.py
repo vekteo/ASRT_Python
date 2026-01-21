@@ -19,15 +19,11 @@ QUIZ_QUESTIONS_DATA = [
 ]
 
 # --- MAIN FUNCTION FOR QUIZ EXECUTION ---
-# --- CHANGED: Added riponda_port=None to the signature ---
 def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, riponda_port=None):
     """
     Runs one round of the comprehension quiz.
     Returns True if passed (0 errors), False otherwise.
     """
-    
-    # --- ADDED: Local Riponda map for MW/Quiz screens (1, 2, 3, 4) ---
-    # Maps the "press" byte (from your test) directly to the number string
     # 0x30 -> '1', 0x70 -> '2', 0xb0 -> '3', 0xf0 -> '4'
     quiz_riponda_map = {
         48: '1',  # Button 1 Press
@@ -35,9 +31,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
         176: '3', # Button 3 Press
         240: '4'  # Button 4 Press
     }
-    # --- END ADD ---
 
-    # --- CHANGED: Added riponda_port and byte_map to the signature ---
     def display_quiz_question(q_num, q_text, choices_str, riponda_port=None, byte_map=None):
         choices = [c.strip() for c in choices_str.split(',')]
         
@@ -60,7 +54,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
         q_stim.draw()
         win.flip()
         
-        # --- CHANGED: Replaced event.waitKeys() with a custom polling loop ---
         pressed_key = None
         while pressed_key is None:
             # 1. Check Keyboard
@@ -74,81 +67,71 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                 try:
                     packet = riponda_port.read(6)
                     if packet[0] == 0x6b and packet[1] in byte_map:
-                        # Find out which key was pressed (e.g., '1', '2', '3', '4')
                         riponda_key = byte_map[packet[1]] 
                         
-                        # IMPORTANT: Check if this key is a VALID answer for this question
                         if riponda_key in valid_keys: 
                             pressed_key = riponda_key
                             riponda_port.reset_input_buffer()
                             break
                         else:
-                            # Pressed a key (e.g., '2'), but it's not a valid option ('1' or '4')
-                            riponda_port.reset_input_buffer() # Ignore and wait
+                            riponda_port.reset_input_buffer()
                     else:
-                        riponda_port.reset_input_buffer() # Ignore release packets
+                        riponda_port.reset_input_buffer()
                 except Exception as e:
                     print(f"Riponda read error: {e}")
                     riponda_port.reset_input_buffer()
             
-            core.wait(0.001) # Don't fry the CPU
-        # --- END CHANGE ---
+            core.wait(0.001)
             
         if pressed_key == 'escape':
             save_and_quit()
             
-        return pressed_key # Was response[0]
+        return pressed_key
 
-    # Function to execute one full quiz round and return error count
     def execute_quiz_round():
-        nonlocal save_and_quit, riponda_port, quiz_riponda_map # --- ADDED ---
+        nonlocal save_and_quit, riponda_port, quiz_riponda_map
         quiz_error_count = 0
         
         # Run Questions
         for i, q_data in enumerate(QUIZ_QUESTIONS_DATA):
             q_num = i + 1
             
-            # --- CHANGED: Using the correct, imported function ---
             q_text = get_text_with_newlines('Quiz', q_data['q_key'])
             choices_str = get_text_with_newlines('Quiz', q_data['c_key'])
             correct_ans_str = get_text_with_newlines('Quiz', q_data['a_key'])
             
-            # --- CHANGED: Pass Riponda info to the helper function ---
             response_key = display_quiz_question(
                 q_num, q_text, choices_str,
                 riponda_port=riponda_port,
                 byte_map=quiz_riponda_map
             )
             
-            # --- Map response key ('1' or '4') to 0-based index ('0' or '1') ---
             num_choices = len(choices_str.split(','))
             
             if num_choices == 2 and response_key == '4':
-                # Map '4' to index '1' ONLY for 2-choice questions
                 response_index_str = '1'
             else:
-                # Original logic works for '1', '2', '3'
-                # and for '1' in the 2-choice case
                 response_index_str = str(int(response_key) - 1)
                 
             is_correct = (response_index_str == correct_ans_str)
             
             if not is_correct:
                 quiz_error_count += 1
-                feedback_text = "Incorrect."
+                feedback_text = get_text_with_newlines('Quiz', 'quiz_question_feedback_incorrect')
                 feedback_color = 'red'
             else:
-                feedback_text = "Correct! "
+                feedback_text = get_text_with_newlines('Quiz', 'quiz_question_feedback_correct')
                 feedback_color = 'green'
 
-            feedback_stim = visual.TextStim(win, text=feedback_text + "\n\nPress SPACE to continue.", 
+            feedback_press_key = get_text_with_newlines('Quiz', 'quiz_press_key')
+            feedback_stim = visual.TextStim(win, text=feedback_text + feedback_press_key, 
                                             color=feedback_color, height=35, font='Arial')
             
             feedback_stim.draw()
             win.flip()
+            core.wait(1.0)
+            event.clearEvents()
 
-            # --- CHANGED: Replaced event.waitKeys() with polling loop ---
-            # This loop accepts 'space' or *any* Riponda button press
             pressed_key = None
             while pressed_key is None:
                 # 1. Check Keyboard
@@ -161,7 +144,7 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                     try:
                         packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in quiz_riponda_map:
-                            pressed_key = 'riponda_press' # Acts like 'space'
+                            pressed_key = 'riponda_press'
                             riponda_port.reset_input_buffer()
                             break
                         else:
@@ -170,7 +153,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                         print(f"Riponda read error: {e}")
                         riponda_port.reset_input_buffer()
                 core.wait(0.001)
-            # --- END CHANGE ---
             if pressed_key == 'escape':
                 save_and_quit()
 
@@ -178,7 +160,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
 
     # --- Main Quiz Flow Control ---
     
-    # 1. Display Quiz Introduction based on attempt number
     if attempt_number == 1:
         intro_key = 'quiz_intro'
         default_intro = "You will now complete a short 9-question comprehension quiz.\n\n(Press SPACE to begin.)"
@@ -191,7 +172,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
     intro_stim.draw()
     win.flip()
 
-    # --- CHANGED: Replaced event.waitKeys() with polling loop ---
     pressed_key = None
     while pressed_key is None:
         kb_responses = event.getKeys()
@@ -211,23 +191,18 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                 print(f"Riponda read error: {e}")
                 riponda_port.reset_input_buffer()
         core.wait(0.001)
-    # --- END CHANGE ---
 
     if pressed_key == 'escape':
         save_and_quit()
 
-    # 2. Execute one round
     error_count = execute_quiz_round()
     
-    # 3. Check results and return True (Pass) or False (Fail)
     if error_count == 0:
-        # PASSED
         final_text = get_text_with_newlines('Quiz', 'quiz_passed_congrats', default="Congratulations, you passed the quiz!\n\n(Press SPACE to continue.)")
         final_stim = visual.TextStim(win, text=final_text, color='green', height=40, font='Arial')
         final_stim.draw()
         win.flip()
         
-        # --- CHANGED: Replaced event.waitKeys() with polling loop ---
         pressed_key = None
         while pressed_key is None:
             kb_responses = event.getKeys()
@@ -247,18 +222,15 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                     print(f"Riponda read error: {e}")
                     riponda_port.reset_input_buffer()
             core.wait(0.001)
-        # --- END CHANGE ---
         
         return True
         
     else:
         # FAILED
         correct_count = 9 - error_count
-        
-        # Display failure/summary message
         summary_text = get_text_with_newlines(
             'Quiz', 
-            'quiz_explanation_page1', # This text key is used for the "you failed" summary
+            'quiz_explanation_page1',
             default="You answered {correct_count} out of 9 questions correctly."
         ).format(correct_count=correct_count)
         
@@ -269,7 +241,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
         summary_stim.draw()
         win.flip()
 
-        # --- CHANGED: Replaced event.waitKeys() with polling loop ---
         pressed_key = None
         while pressed_key is None:
             kb_responses = event.getKeys()
@@ -289,6 +260,5 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
                     print(f"Riponda read error: {e}")
                     riponda_port.reset_input_buffer()
             core.wait(0.001)
-        # --- END CHANGE ---
 
         return False
