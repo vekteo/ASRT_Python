@@ -234,7 +234,6 @@ def run_comprehension_quiz(win, save_and_quit, text_filename, attempt_number=1, 
             default="You answered {correct_count} out of 9 questions correctly."
         ).format(correct_count=correct_count)
         
-        
         summary_text += "\n\n(Press SPACE to continue.)"
 
         summary_stim = visual.TextStim(win, text=summary_text, color='black', height=22, wrapWidth=1200, font='Arial')

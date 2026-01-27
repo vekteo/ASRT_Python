@@ -1,4 +1,4 @@
-# Alternating Serial Reaction Time (ASRT) Task
+# Alternating Serial Reaction Time (ASRT) Task (PsychoPy)
 
 This repository contains a Python-based psychological experiment developed using **PsychoPy** that implements a modified **Alternating Serial Reaction Time (ASRT)** task. The experiment is designed to study implicit sequence learning while monitoring attentional states through **No-Go trials** and **Mind-Wandering (MW) probes**.
 
