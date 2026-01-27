@@ -59,7 +59,7 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 | **trial_number** | The total cumulative trial count across the session. |
 | **trial_in_block_num** | Position of the trial within its specific block. |
 | **trial_type** | Denotes if the trial was pattern-based (P) or random (R). |
-| **probability_type** | A code indicating the frequency of the trial sequence (e.g., High, Low, Trigram). |
+| **probability_type** | A code indicating the frequency of the trial sequence (e.g., High, Low, Trill, Repetition). |
 | **sequence_used** | The specific pattern applied during the session. |
 | **stimulus_position_num** | Records which of the four locations displayed the target. |
 | **rt_non_cumulative_s** | Reaction time from the start of the current stimulus. |
