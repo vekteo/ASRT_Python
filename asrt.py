@@ -31,7 +31,8 @@ unique_filename = os.path.join(
 )
 
 # --- Define Fieldnames for CSV ---
-fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 
+# Added 'is_first_attempt' to the fieldnames list
+fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'probability_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 'is_first_attempt',
               'mind_wandering_rating_1', 'mind_wandering_rating_2', 'mind_wandering_rating_3', 'mind_wandering_rating_4']
 
 # --- Write initial CSV Header ---
@@ -238,7 +239,7 @@ if NO_GO_TRIALS_ENABLED:
 
 # --- MW Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
-    show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, text_filename, riponda_port=riponda_port)
+    show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPRE_QUIZ, text_filename, riponda_port=riponda_port)
 
 # --- Start Experiment Screen ---
 if PRACTICE_ENABLED:
@@ -339,7 +340,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         
         trial_trigger = (251 if is_nogo else 151) + target_stim_pos
         utils.send_trigger_pulse(ser_port, trial_trigger)
-        print(f"Trial {total_trial_count} onset trigger: {trial_trigger}")
 
         cumulative_timer = core.Clock()
         
@@ -366,7 +366,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                             responses = [(key, rt)]
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
-                        print(f"Riponda read error: {e}")
                         try:
                             riponda_port.reset_input_buffer()
                         except Exception:
@@ -382,7 +381,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     response_trigger = 91 + pressed_key_pos 
                     
                     utils.send_trigger_pulse(ser_port, response_trigger)
-                    print(f"Response trigger: {response_trigger} (No-Go Error)")
                     
                     block_data.append({
                         'participant': expInfo['participant'],
@@ -393,7 +391,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'trial_type': trial_type,
                         'probability_type': probability_type,
                         'sequence_used': sequence_to_save,
-                        'metric_position_num': target_stim_pos,
+                        'stimulus_position_num': target_stim_pos,
                         'rt_non_cumulative_s': rt,
                         'rt_cumulative_s': rt,
                         'correct_key_pressed': 'NoGo',
@@ -402,6 +400,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': True,
                         'is_practice': True,
                         'epoch': 0,
+                        'is_first_attempt': 1,
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
@@ -428,6 +427,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': True,
                         'is_practice': True,
                         'epoch': 0,
+                        'is_first_attempt': 1,
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
@@ -437,6 +437,7 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         else: # Go trial
             response_timer = core.Clock()
             correct_response_given = False
+            first_attempt_in_trial = True # Modifier: track first attempt
             while not correct_response_given:
                 if 'escape' in event.getKeys():
                     quit_experiment()
@@ -458,7 +459,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                             pressed_key = riponda_byte_map[packet[1]]
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
-                        print(f"Riponda read error: {e}")
                         try:
                             riponda_port.reset_input_buffer()
                         except Exception:
@@ -479,7 +479,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         response_trigger = 81 + pressed_key_pos
                     
                     utils.send_trigger_pulse(ser_port, response_trigger)
-                    print(f"Response trigger: {response_trigger}")
 
                     block_data.append({
                         'participant': expInfo['participant'],
@@ -499,12 +498,14 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                         'is_nogo': False,
                         'is_practice': True,
                         'epoch': 0,
+                        'is_first_attempt': 1 if first_attempt_in_trial else 0, # Modifier
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
                     })
                 
+                    first_attempt_in_trial = False # Subsequent keys are not first attempts
                     response_timer.reset()
                     if was_correct:
                         correct_response_given = True
@@ -526,14 +527,13 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         with open(unique_filename, 'a', newline='') as csvfile: 
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writerows(block_data)
-        print(f"Data for Practice Block {practice_block_num} saved incrementally.")
     except Exception as e:
-        print(f"ERROR: Failed to save incremental data for Practice Block {practice_block_num}: {e}")
+        print(f"ERROR: Failed to save data: {e}")
 
     if FEEDBACK_ENABLED:
-        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
-        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
-        total_responses = len([d for d in block_data if not d['is_nogo']])
+        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo'] and d['rt_cumulative_s'] is not None]
+        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'] and d.get('is_first_attempt') == 1)
+        total_responses = len([d for d in block_data if not d['is_nogo'] and d.get('is_first_attempt') == 1])
 
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
@@ -703,7 +703,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
         target_image.pos = stimuli[target_stim_index]['stim'].pos
         
         utils.send_trigger_pulse(ser_port, trial_trigger)
-        print(f"Trial {total_trial_count} onset trigger: {trial_trigger}")
 
         cumulative_timer = core.Clock()
         
@@ -732,7 +731,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
                             responses = [(key, rt)]
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
-                        print(f"Riponda read error: {e}")
                         try:
                             riponda_port.reset_input_buffer()
                         except Exception:
@@ -746,7 +744,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     pressed_key_pos = keys.index(pressed_key) + 1
                     response_trigger = 91 + pressed_key_pos
                     utils.send_trigger_pulse(ser_port, response_trigger)
-                    print(f"Response trigger: {response_trigger} (No-Go Error)")
                     
                     block_data.append({
                         'participant': expInfo['participant'],
@@ -766,6 +763,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': True,
                         'is_practice': False,
                         'epoch': epoch,
+                        'is_first_attempt': 1,
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
@@ -792,6 +790,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': True,
                         'is_practice': False,
                         'epoch': epoch,
+                        'is_first_attempt': 1,
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
@@ -801,6 +800,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         else: # Go trial
             response_timer = core.Clock()
             correct_response_given = False
+            first_attempt_in_trial = True # Modifier
             while not correct_response_given:
                 if 'escape' in event.getKeys():
                     quit_experiment()
@@ -822,7 +822,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
                             pressed_key = riponda_byte_map[packet[1]]
                         riponda_port.reset_input_buffer() 
                     except Exception as e:
-                        print(f"Riponda read error: {e}")
                         try:
                             riponda_port.reset_input_buffer()
                         except Exception:
@@ -843,7 +842,6 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         response_trigger = 81 + pressed_key_pos
                     
                     utils.send_trigger_pulse(ser_port, response_trigger) 
-                    print(f"Response trigger: {response_trigger}")
 
                     block_data.append({
                         'participant': expInfo['participant'],
@@ -863,12 +861,14 @@ for block_num in range(1, NUM_BLOCKS + 1):
                         'is_nogo': False,
                         'is_practice': False,
                         'epoch': epoch,
+                        'is_first_attempt': 1 if first_attempt_in_trial else 0, # Modifier
                         'mind_wandering_rating_1': na_ratings[0], 
                         'mind_wandering_rating_2': na_ratings[1],
                         'mind_wandering_rating_3': na_ratings[2],
                         'mind_wandering_rating_4': na_ratings[3]
                     })
                 
+                    first_attempt_in_trial = False # Subsequent attempts marked as 0
                     response_timer.reset()
                     if was_correct:
                         correct_response_given = True
@@ -885,19 +885,17 @@ for block_num in range(1, NUM_BLOCKS + 1):
         d['mind_wandering_rating_3'] = mw_ratings[2]
         d['mind_wandering_rating_4'] = mw_ratings[3]
 
-    
     try:
         with open(unique_filename, 'a', newline='') as csvfile: 
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writerows(block_data)
-        print(f"Data for Main Block {block_num} saved incrementally.")
     except Exception as e:
-        print(f"ERROR: Failed to save incremental data for Main Block {block_num}: {e}")
+        print(f"ERROR: Failed to save data: {e}")
 
     if FEEDBACK_ENABLED:
-        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
-        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'])
-        total_responses = len([d for d in block_data if not d['is_nogo']])
+        correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo'] and d['rt_cumulative_s'] is not None]
+        total_correct_responses = sum(1 for d in block_data if d['correct_response'] and not d['is_nogo'] and d.get('is_first_attempt') == 1)
+        total_responses = len([d for d in block_data if not d['is_nogo'] and d.get('is_first_attempt') == 1])
 
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct_responses / total_responses) * 100 if total_responses > 0 else 0
