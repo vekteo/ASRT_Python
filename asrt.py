@@ -58,7 +58,7 @@ try:
     RUN_COMPREHENSION_QUIZ = config.getboolean('Experiment', 'run_quiz_if_mw_enabled')
     PRACTICE_ENABLED = config.getboolean('Practice', 'practice_enabled')
     NUM_PRACTICE_BLOCKS = config.getint('Practice', 'num_practice_blocks')
-    
+    MANDATORY_WAIT = config.getfloat('Experiment', 'mandatory_wait_before_next_block_s', fallback=0.0)    
     ISI_DURATION = config.getfloat('Experiment', 'isi_duration_s')
     NOGO_TRIAL_DURATION = config.getfloat('Experiment', 'nogo_trial_duration_s')
     FEEDBACK_ENABLED = config.getboolean('Experiment', 'feedback_enabled')
@@ -131,6 +131,7 @@ for x, key in zip(x_positions, keys):
 image_size = circle_radius * 2 - 3
 border_circles = []
 image_stims = []
+fixation_cross = visual.TextStim(win, text='+', color='black', height=50, font='Arial')
 for s in stimuli:
     border = visual.Circle(win=win, radius=circle_radius, fillColor='black', pos=s['stim'].pos)
     border_circles.append(border)
@@ -563,6 +564,10 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     gc.collect() 
 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
+        if MANDATORY_WAIT > 0:
+            fixation_cross.draw()
+            win.flip()
+            core.wait(MANDATORY_WAIT)
         continuation_text = get_text_with_newlines('Screens', 'next_practice')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
         continuation_message.draw()
@@ -921,6 +926,11 @@ for block_num in range(1, NUM_BLOCKS + 1):
         core.wait(3)
 
     if block_num < NUM_BLOCKS:
+        if MANDATORY_WAIT > 0:
+            fixation_cross.draw()
+            win.flip() 
+            core.wait(MANDATORY_WAIT)
+        
         continuation_text = get_text_with_newlines('Screens', 'next_main')
         continuation_message = visual.TextStim(win, text=continuation_text, color='black', height=40, wrapWidth=1000, font='Arial')
         continuation_message.draw()
