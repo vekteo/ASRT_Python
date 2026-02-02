@@ -3,7 +3,7 @@ from config_helpers import get_text_with_newlines
 import experiment_utils as utils
 
 # --- MAIN PROBE FUNCTION ---
-def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, save_and_quit_func, riponda_port=None):
+def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, save_and_quit_func, riponda_port=None, fg_color='black', bg_color='white'):
     """
     Displays the Mind Wandering probe (Q1) and branches to ask three follow-up 
     questions (Q2, Q3, Q4) based on the Q1 response (1,2=MW vs. 3,4=Non-MW).
@@ -47,10 +47,10 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
     ]
     # Q4: Affective tone of thoughts (MW-branch)
     q4_mw_details = [
-        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_1', default="Completely positive"), 'x': -300},
+        {'key': '1', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_1', default="Completely Negative"), 'x': -300},
         {'key': '2', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_2', default=""), 'x': -100},
         {'key': '3', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_3', default=""), 'x': 100},
-        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_4', default="Completely Negative"), 'x': 300}
+        {'key': '4', 'label': get_text_with_newlines('MW_Probe_Content', 'q4_mw_label_4', default="Completely Positive"), 'x': 300}
     ]
     # Q2: Task focus (On-Task branch)
     q2_on_task_details = [
@@ -93,7 +93,7 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         for detail in details:
             rect = visual.Rect(
                 win=win, width=150, height=100, pos=(detail['x'], 0),
-                fillColor='lightgrey', lineColor='black', lineWidth=3,
+                fillColor='lightgrey', lineColor=fg_color, lineWidth=3,
                 autoDraw=True
             )
             number_stim = visual.TextStim(
@@ -101,7 +101,7 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
                 autoDraw=True, font='Arial'
             )
             label_stim = visual.TextStim(
-                win, text=detail['label'], color='black', height=20, pos=(detail['x'], -100), wrapWidth=200,
+                win, text=detail['label'], color=fg_color, height=20, pos=(detail['x'], -100), wrapWidth=200,
                 autoDraw=True, font='Arial'
             )
             buttons_list.append({'rect': rect, 'number': number_stim, 'label': label_stim, 'rating': detail['key']})
@@ -110,18 +110,15 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
     def display_and_collect_rating(question_text, buttons_details, question_onset_trigger, response_base_trigger, riponda_port=None, byte_map=None, initial_wait=0.0):
         
         # --- INPUT PROTECTION DELAY (BEFORE APPEARANCE) ---
-        # If an initial wait is requested, we pause here BEFORE drawing the question.
-        # This prevents accidental presses from the previous task from registering on the MW probe.
         if initial_wait > 0:
-            win.flip() # Clear screen to background color
+            win.flip()
             core.wait(initial_wait)
-            # Critical: Clear the event buffers to discard any key presses made during the wait
             event.clearEvents()
             if riponda_port:
                 riponda_port.reset_input_buffer()
         # ------------------------------
 
-        question_stim = visual.TextStim(win, text=question_text, color='black', height=40, pos=(0, 200), wrapWidth=1000, font='Arial')
+        question_stim = visual.TextStim(win, text=question_text, color=fg_color, height=40, pos=(0, 200), wrapWidth=1600, font='Arial')
         
         buttons = draw_buttons(buttons_details)
 
@@ -198,7 +195,6 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         return rating
 
     # --- Q1: Collect Primary Focus Rating ---
-    # We pass initial_wait=1.0 here to pause input for 1 second BEFORE Q1 appears
     rating_1 = display_and_collect_rating(
         primary_question, 
         q1_button_details,
@@ -227,12 +223,11 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
     # --- Q2, Q3, Q4: Collect Follow-up Ratings ---
     for i, q_data in enumerate(follow_up_data):
         question_num = i + 2
-        full_question = f"Q{question_num}: {q_data['text']} (Press 1-4)"
+        full_question = f"Q{question_num}: {q_data['text']}"
         
         q_onset_trigger = onset_triggers[i]
         q_response_base = response_bases[i]
         
-        # No initial wait for follow-up questions (defaults to 0.0)
         rating_n = display_and_collect_rating(
             full_question, 
             q_data['details'],

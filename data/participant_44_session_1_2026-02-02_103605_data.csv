@@ -1,0 +1,10 @@
+participant,session,block_number,trial_number,trial_in_block_num,trial_type,probability_type,sequence_used,stimulus_position_num,rt_non_cumulative_s,rt_cumulative_s,correct_key_pressed,response_key_pressed,correct_response,is_nogo,is_practice,epoch,is_first_response,mind_wandering_rating_1,mind_wandering_rating_2,mind_wandering_rating_3,mind_wandering_rating_4
+44,1,1,1,1,R,X,"1,2,4,3",3,0.47176740000031714,0.47176740000031714,j,f,False,False,False,1,,1,2,1,2
+44,1,1,1,1,R,X,"1,2,4,3",3,0.19221769999967364,0.6639850999999908,j,j,True,False,False,1,,1,2,1,2
+44,1,1,2,2,P,X,"1,2,4,3",1,0.3459394000001339,0.3459394000001339,s,s,True,False,False,1,,1,2,1,2
+44,1,1,3,3,R,L,"1,2,4,3",4,0.35248739999951795,0.35248739999951795,l,l,True,False,False,1,,1,2,1,2
+44,1,1,4,4,P,H,"1,2,4,3",2,0.2902743999993618,0.2902743999993618,f,f,True,False,False,1,,1,2,1,2
+44,1,1,5,5,R,L,"1,2,4,3",1,0.290791999999783,0.290791999999783,s,s,True,False,False,1,,1,2,1,2
+44,1,1,6,6,P,H,"1,2,4,3",4,0.2498081000003367,0.2498081000003367,l,l,True,False,False,1,,1,2,1,2
+44,1,1,7,7,R,H,"1,2,4,3",2,0.23521209999944404,0.23521209999944404,f,f,True,False,False,1,,1,2,1,2
+44,1,1,8,8,P,H,"1,2,4,3",3,0.267544899999848,0.267544899999848,j,j,True,False,False,1,,1,2,1,2
