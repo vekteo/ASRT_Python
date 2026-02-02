@@ -69,27 +69,23 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
         {'text': get_text_with_newlines('MW_Probes', 'mw_final_note'), 'buttons': None},
     ]
 
-    # Function to draw example buttons for instructions
     def draw_instruction_buttons(details):
         if not details: return
         for detail in details:
-            # Draw the button rectangle
             rect = visual.Rect(
                 win=win, width=150, height=100, pos=(detail['x'], -250),
                 fillColor='lightgrey', lineColor=fg_color, lineWidth=3
             )
             rect.draw()
             
-            # Draw the key number inside the button
             number_stim = visual.TextStim(
                 win, text=detail['key'], color='black', height=50, pos=(detail['x'], -250),
                 font='Arial'
             )
             number_stim.draw()
             
-            # Draw the label below the button
             label_stim = visual.TextStim(
-                win, text=detail['label'], color=fg_color, height=20, pos=(detail['x'], -350), wrapWidth=200,
+                win, text=detail['label'], color=fg_color, height=20, pos=(detail['x'], -350), wrapWidth=220,
                 font='Arial'
             )
             label_stim.draw()
@@ -102,7 +98,7 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
             color=fg_color, 
             height=28, 
             pos=(0, 50), 
-            wrapWidth=1700, 
+            wrapWidth=1600, 
             font='Arial'
         )
         
@@ -113,7 +109,7 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
             color=fg_color, 
             height=20, 
             pos=(0, -450), 
-            wrapWidth=1600, 
+            wrapWidth=1700, 
             font='Arial'
         )
 
@@ -123,9 +119,11 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
         if page['buttons']:
             draw_instruction_buttons(page['buttons'])
             
-        win.flip()
+        win.flip()        
+        event.clearEvents()
+        if riponda_port:
+            riponda_port.reset_input_buffer()
         
-        # Wait for input
         pressed_key = None
         while pressed_key is None:
             # 1. Check Keyboard
@@ -150,6 +148,7 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
 
         if pressed_key == 'escape':
             quit_experiment()
+        core.wait(0.5)
 
     # --- COMPREHENSION QUIZ ---
     if RUN_COMPREHENSION_QUIZ:
@@ -159,7 +158,7 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
         
         while not quiz_passed and attempts < MAX_ATTEMPTS:
             attempts += 1
-            passed = run_comprehension_quiz(win, text_filename, riponda_port=riponda_port, fg_color=fg_color, bg_color=bg_color)
+            passed = run_comprehension_quiz(win, quit_experiment, text_filename, attempt_number=attempts, riponda_port=riponda_port, fg_color=fg_color, bg_color=bg_color)
             
             if passed:
                 quiz_passed = True
@@ -170,13 +169,11 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
                 success_msg.draw()
                 win.flip()
                 core.wait(2.0)
+                               
+                event.clearEvents()
+                if riponda_port:
+                    riponda_port.reset_input_buffer()
                 
-                # Wait for key to start main task
-                start_prompt = get_text_with_newlines('Quiz', 'quiz_passed_start')
-                visual.TextStim(win, text=start_prompt, color=fg_color, height=30, wrapWidth=1600).draw()
-                win.flip()
-                
-                # Simple wait
                 pressed_key = None
                 while pressed_key is None:
                     # 1. Check Keyboard
@@ -199,16 +196,21 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
                             riponda_port.reset_input_buffer()
                     core.wait(0.001)
                 
+                core.wait(0.5)
+                
             else:
                 if attempts < MAX_ATTEMPTS:
                     retry_text = get_text_with_newlines('Quiz', 'quiz_failed_retry')
                     retry_msg = visual.TextStim(
-                        win, text=retry_text, color='red', height=30, wrapWidth=1600, font='Arial'
+                        win, text=retry_text, color='white', height=30, wrapWidth=1600, font='Arial'
                     )
                     retry_msg.draw()
                     win.flip()
                     
-                    # Wait for input
+                    event.clearEvents()
+                    if riponda_port:
+                        riponda_port.reset_input_buffer()
+                    
                     pressed_key = None
                     while pressed_key is None:
                         # 1. Check Keyboard
@@ -230,6 +232,8 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
                                 print(f"Riponda read error: {e}")
                                 riponda_port.reset_input_buffer()
                         core.wait(0.001)
+                    
+                    core.wait(0.5)
         
         if not quiz_passed:
             fail_text = get_text_with_newlines(
@@ -248,6 +252,11 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
             )
             fail_message.draw()
             win.flip()
+            core.wait(0.5)
+            
+            event.clearEvents()
+            if riponda_port:
+                riponda_port.reset_input_buffer()
             
             pressed_key = None
             while pressed_key is None:
@@ -273,3 +282,5 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
 
             if pressed_key == 'escape':
                 quit_experiment()
+            
+            core.wait(0.5)

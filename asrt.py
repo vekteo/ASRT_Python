@@ -69,7 +69,6 @@ try:
     target_image_path = config.get('Experiment', 'target_image_filename')
     nogo_image_path = config.get('Experiment', 'nogo_image_filename')
 
-    # Color settings
     BACKGROUND_COLOR = config.get('Experiment', 'background_color', fallback='white')
     FOREGROUND_COLOR = config.get('Experiment', 'foreground_color', fallback='black')
 
@@ -78,8 +77,8 @@ try:
         core.quit()
         
     RIPONDA_ENABLED = config.getboolean('Experiment', 'riponda_enabled', fallback=False)
-    RIPONDA_PORT_NAME = config.get('Experiment', 'riponda_port', fallback='COM4')
-    RIPONDA_BAUDRATE = config.getint('Experiment', 'riponda_baudrate', fallback=115200)
+    RIPONDA_PORT_NAME = config.get('Experiment', 'riponda_port', fallback='COM3')
+    RIPONDA_BAUDRATE = config.getint('Experiment', 'riponda_baudrate', fallback=2000000)
       
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
@@ -128,7 +127,7 @@ win = visual.Window(
     color=BACKGROUND_COLOR, 
     multiSample=True, 
     numSamples=16,
-    waitBlanking=False
+    waitBlanking=True
 )
 kb = keyboard.Keyboard()
 circle_radius = 60
@@ -137,25 +136,21 @@ x_positions = [-240, -80, 80, 240]
 
 stimuli = []
 for x, key in zip(x_positions, keys):
-    # Circles always filled with white as requested
     circle = visual.Circle(win=win, radius=circle_radius, fillColor='white', lineColor=FOREGROUND_COLOR, lineWidth=3, pos=(x, y_pos))
     stimuli.append({'stim': circle, 'key': key})
 
 image_size = circle_radius * 2 - 3
 border_circles = []
 image_stims = []
-# Fixation cross uses FOREGROUND_COLOR
 fixation_cross = visual.TextStim(win, text='+', color=FOREGROUND_COLOR, height=50, font='Arial')
 for s in stimuli:
     border = visual.Circle(win=win, radius=circle_radius, fillColor='white', pos=s['stim'].pos)
     border_circles.append(border)
-    img = visual.ImageStim(win=win, image=target_image_path, size=image_size, pos=s['stim'].pos)
+    img = visual.ImageStim(win=win, image=target_image_path, size=image_size, pos=s['stim'].pos, interpolate=True)
     image_stims.append(img)
 
-# Pre-create reusable TextStims using FOREGROUND_COLOR
 feedback_header = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=40, pos=(0, 100), wrapWidth=1600, font='Arial')
 feedback_stats = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=30, pos=(0, 0), wrapWidth=1600, font='Arial')
-# feedback_performance starts green, but logic updates it to red/green dynamically
 feedback_performance = visual.TextStim(win, text='', color='green', height=40, pos=(0, -100), wrapWidth=1600, font='Arial')
 continuation_message_text = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 
@@ -213,17 +208,20 @@ def wait_for_response():
             riponda_port.reset_input_buffer()
         except Exception:
             pass
-    while True:
+    
+    input_received = False
+    while not input_received:
         keys_pressed = kb.getKeys(waitRelease=False)
         if keys_pressed:
             if 'escape' in [k.name for k in keys_pressed]:
                 quit_experiment()
-            return
-        if riponda_port and riponda_port.in_waiting >= 6:
+            input_received = True
+            
+        if not input_received and riponda_port and riponda_port.in_waiting >= 6:
             try:
                 packet = riponda_port.read(6)
                 if len(packet) == 6 and packet[0] == 0x6b:
-                    return
+                    input_received = True
                 elif len(packet) == 6:
                     riponda_port.reset_input_buffer()
             except Exception:
@@ -231,7 +229,7 @@ def wait_for_response():
                     riponda_port.reset_input_buffer()
                 except Exception:
                     pass
-        core.wait(0.0001)
+    core.wait(0.5)
 
 # --- Instructions ---
 instruction_text = get_text_with_newlines('Instructions', 'welcome_screen').format(keys_list=", ".join([f"'{k}'" for k in keys]))
@@ -240,7 +238,6 @@ instruction_message.draw()
 win.flip()
 wait_for_response()
 
-# --- No-Go instructions ---
 if NO_GO_TRIALS_ENABLED:
     try:
         nogo_inst_text = get_text_with_newlines('Instructions', 'nogo_screen')
@@ -251,7 +248,6 @@ if NO_GO_TRIALS_ENABLED:
     win.flip()
     wait_for_response()
 
-# --- MW Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
     show_mw_instructions_and_quiz(
         win, 
@@ -263,7 +259,6 @@ if MW_TESTING_INVOLVED:
         bg_color=BACKGROUND_COLOR
     )
 
-# --- Start Experiment Screen ---
 if PRACTICE_ENABLED:
     start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
     start_trigger_value = 90
@@ -280,7 +275,6 @@ if 'escape' in [k.name for k in key_pressed]:
 
 utils.send_trigger_pulse(ser_port, start_trigger_value)
 
-# --- Countdown ---
 prep_text = get_text_with_newlines('Screens', 'countdown_message')
 prep_message = visual.TextStim(win, text=prep_text, color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 prep_message.draw()
@@ -288,14 +282,8 @@ win.flip()
 utils.send_trigger_pulse(ser_port, 180)
 core.wait(10.0)
 
-# --- State variables ---
 total_trial_count = 0
 NA_MW_RATING = 'NA'
-pos_minus_1 = None
-pos_minus_2 = None
-
-# --- Main Clock Initialization ---
-trial_clock = core.Clock()
 
 # --- Practice Loop ---
 for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED else []:
@@ -305,22 +293,13 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
-        num_nogo_per_block = NUM_NO_GO_TRIALS
-        num_nogo_p_per_block = 0
-        num_nogo_r_per_block = num_nogo_per_block
-        
         pre_block_trials = []
         for trial_in_block in range(TRIALS_PER_BLOCK):
-            trial_in_block_num = trial_in_block + 1
-            trial_type = 'R'
-            pre_block_trials.append({'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type})
-        block_indices = range(len(pre_block_trials))
+            pre_block_trials.append({'trial_in_block_num': trial_in_block + 1, 'trial_type': 'R'})
         try:
-            nogo_indices_in_block_relative = select_nogo_trials_in_block(block_indices, pre_block_trials, num_nogo_p_per_block, num_nogo_r_per_block)
-            nogo_trial_indices_in_block.update(nogo_indices_in_block_relative)
-        except (ValueError, RuntimeError) as e:
-            print(f"Error selecting no-go trials for Practice Block {practice_block_num}: {e}")
-            core.quit()
+            nogo_indices = select_nogo_trials_in_block(range(len(pre_block_trials)), pre_block_trials, 0, NUM_NO_GO_TRIALS)
+            nogo_trial_indices_in_block.update(nogo_indices)
+        except: core.quit()
 
     practice_positions_list = []
     positions_per_stim = TRIALS_PER_BLOCK // len(stimuli)
@@ -347,9 +326,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         practice_list_index += 1
         trial_type = 'R'
         triplet_type = 'X'
-
-        pos_minus_2 = pos_minus_1
-        pos_minus_1 = target_stim_pos
         
         target_stim_index = target_stim_pos - 1
         image_path_to_use = nogo_image_path if is_nogo else target_image_path
@@ -358,7 +334,6 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         border = border_circles[target_stim_index]
         target_image = image_stims[target_stim_index]
         target_image.image = image_path_to_use
-        target_image.size = image_size
         target_image.pos = stimuli[target_stim_index]['stim'].pos
         
         for stim_dict in stimuli:
@@ -366,32 +341,31 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         border.draw()
         target_image.draw()
         
-        win.flip()
-        trial_clock.reset() 
+        # High precision onset timing
+        onset_time = win.flip()
         utils.send_trigger_pulse(ser_port, (251 if is_nogo else 151) + target_stim_pos)
 
         if is_nogo:
             response_logged = False
-            while trial_clock.getTime() < NOGO_TRIAL_DURATION:
+            while core.getTime() - onset_time < NOGO_TRIAL_DURATION:
                 responses = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if not responses and riponda_port and riponda_port.in_waiting >= 6: 
                     try:
                         packet = riponda_port.read(6) 
-                        rt = trial_clock.getTime()
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt})()]
+                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()]
                         riponda_port.reset_input_buffer() 
                     except Exception: pass
                 
                 if responses and not response_logged:
                     resp = responses[0]
                     if resp.name == 'escape': quit_experiment()
+                    rt_val = resp.rt if hasattr(resp, 'rt') else core.getTime() - onset_time
                     utils.send_trigger_pulse(ser_port, 91 + keys.index(resp.name) + 1)
                     block_data.append({
-                        'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': resp.rt, 'rt_cumulative_s': resp.rt, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
+                        'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
                     })
                     response_logged = True
-                core.wait(0.0001)
             if not response_logged:
                 block_data.append({
                     'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
@@ -404,14 +378,13 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                 res_obj = None
                 kb_res = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if kb_res:
-                    rt_now = trial_clock.getTime()
+                    rt_now = core.getTime() - onset_time
                     res_obj = type('obj', (object,), {'name': kb_res[0].name, 'rt': rt_now})()
                 elif riponda_port and riponda_port.in_waiting >= 6:
                     try:
                         packet = riponda_port.read(6) 
-                        rt_now = trial_clock.getTime()
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt_now})()
+                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()
                         riponda_port.reset_input_buffer() 
                     except Exception: pass
                 
@@ -427,22 +400,12 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     first_attempt_in_trial = False
                     time_of_last_response = rt_cumulative
                     if was_correct: correct_response_given = True
-                core.wait(0.0001)
 
-    mw_ratings = show_mind_wandering_probe(
-        win, 
-        ser_port, 
-        MW_TESTING_INVOLVED, 
-        NA_MW_RATING, 
-        quit_experiment, 
-        riponda_port=riponda_port,
-        fg_color=FOREGROUND_COLOR,
-        bg_color=BACKGROUND_COLOR
-    )
+    mw_ratings = show_mind_wandering_probe(win, ser_port, MW_TESTING_INVOLVED, NA_MW_RATING, quit_experiment, riponda_port=riponda_port, fg_color=FOREGROUND_COLOR, bg_color=BACKGROUND_COLOR)
     for d in block_data: d.update({'mind_wandering_rating_1': mw_ratings[0], 'mind_wandering_rating_2': mw_ratings[1], 'mind_wandering_rating_3': mw_ratings[2], 'mind_wandering_rating_4': mw_ratings[3]})
     try:
         with open(unique_filename, 'a', newline='') as csvfile: csv.DictWriter(csvfile, fieldnames=fieldnames).writerows(block_data)
-    except Exception: pass
+    except: pass
 
     if FEEDBACK_ENABLED:
         correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
@@ -451,23 +414,19 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct / total_go) * 100 if total_go > 0 else 0
         feedback_header.text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=practice_block_num)
-        
-        feedback_stats_fmt = get_text_with_newlines('Screens', 'feedback_stats_fmt', default="Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %")
-        feedback_stats.text = feedback_stats_fmt.format(mean_rt=mean_rt, accuracy=accuracy)
-
+        feedback_stats.text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
         if accuracy < 90: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_accurate'), 'red'
         elif mean_rt > 0.350: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_faster'), 'red'
         else: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_good_job'), 'green'
-        feedback_header.draw(); feedback_stats.draw(); feedback_performance.draw(); utils.send_trigger_pulse(ser_port, 161); win.flip(); core.wait(3)
+        feedback_header.draw(); feedback_stats.draw(); feedback_performance.draw(); win.flip(); core.wait(3)
     
-    block_data = []; gc.collect() 
+    gc.collect() 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
         if MANDATORY_WAIT > 0: fixation_cross.draw(); win.flip(); core.wait(MANDATORY_WAIT)
-        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response(); utils.send_trigger_pulse(ser_port, 98)
+        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response()
 
 if PRACTICE_ENABLED:
-    visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw()
-    win.flip(); wait_for_response(); utils.send_trigger_pulse(ser_port, 99)
+    visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response()
 
 # --- Main Experiment Loop ---
 for block_num in range(1, NUM_BLOCKS + 1):
@@ -492,12 +451,12 @@ for block_num in range(1, NUM_BLOCKS + 1):
         try:
             nogo_indices = select_nogo_trials_in_block(range(len(pre_block_trials)), pre_block_trials, NUM_NO_GO_TRIALS // 2, NUM_NO_GO_TRIALS - (NUM_NO_GO_TRIALS // 2))
             nogo_trial_indices_in_block.update(nogo_indices)
-        except Exception: core.quit()
+        except: core.quit()
 
     for trial_in_block in range(TRIALS_PER_BLOCK):
         total_trial_count += 1; trial_in_block_num = trial_in_block + 1; is_nogo = (trial_in_block in nogo_trial_indices_in_block)
         for stim_dict in stimuli: 
-            stim_dict['stim'].fillColor = 'white' # Ensure white fill
+            stim_dict['stim'].fillColor = 'white'
             stim_dict['stim'].draw()
         win.flip(); core.wait(ISI_DURATION)
 
@@ -515,7 +474,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                 elif pos_minus_2 == target_stim_pos:
                     triplet_type = 'T'
                     if pos_minus_1 == target_stim_pos: triplet_type = 'R'
-            except ValueError: pass
+            except: pass
         if trial_in_block_num <= 2: triplet_type = 'X'
         
         trigger_offset = (200 if is_nogo else 100)
@@ -534,45 +493,46 @@ for block_num in range(1, NUM_BLOCKS + 1):
         target_image.pos = stimuli[target_stim_index]['stim'].pos
         
         for stim_dict in stimuli: stim_dict['stim'].draw()
-        border_circles[target_stim_index].draw(); target_image.draw()
+        border_circles[target_stim_index].draw(); 
+        target_image.draw()
         
-        win.flip()
-        trial_clock.reset()
+        # High precision onset timing
+        onset_time = win.flip()
         utils.send_trigger_pulse(ser_port, trial_trigger)
 
         if is_nogo:
             response_logged = False
-            while trial_clock.getTime() < NOGO_TRIAL_DURATION:
+            while core.getTime() - onset_time < NOGO_TRIAL_DURATION:
                 responses = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if not responses and riponda_port and riponda_port.in_waiting >= 6:
                     try:
                         packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': trial_clock.getTime()})()]
+                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()]
                         riponda_port.reset_input_buffer()
-                    except Exception: pass
+                    except: pass
                 if responses and not response_logged:
                     resp = responses[0]
                     if resp.name == 'escape': quit_experiment()
+                    rt_val = resp.rt if hasattr(resp, 'rt') else core.getTime() - onset_time
                     utils.send_trigger_pulse(ser_port, 91 + keys.index(resp.name) + 1)
-                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': resp.rt, 'rt_cumulative_s': resp.rt, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
+                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
                     response_logged = True
-                core.wait(0.0001)
             if not response_logged: block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
         else:
             correct_response_given = False; first_attempt_in_trial = True; time_of_last_response = 0.0
             while not correct_response_given:
                 res_obj = None; kb_res = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if kb_res:
-                    rt_now = trial_clock.getTime()
+                    rt_now = core.getTime() - onset_time
                     res_obj = type('obj', (object,), {'name': kb_res[0].name, 'rt': rt_now})()
                 elif riponda_port and riponda_port.in_waiting >= 6:
                     try:
                         packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': trial_clock.getTime()})()
+                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()
                         riponda_port.reset_input_buffer()
-                    except Exception: pass
+                    except: pass
                 if res_obj:
                     if res_obj.name == 'escape': quit_experiment()
                     rt_cumulative = res_obj.rt
@@ -583,22 +543,12 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     first_attempt_in_trial = False
                     time_of_last_response = rt_cumulative
                     if was_correct: correct_response_given = True
-                core.wait(0.0001)
 
-    mw_ratings = show_mind_wandering_probe(
-        win, 
-        ser_port, 
-        MW_TESTING_INVOLVED, 
-        NA_MW_RATING, 
-        quit_experiment, 
-        riponda_port=riponda_port,
-        fg_color=FOREGROUND_COLOR,
-        bg_color=BACKGROUND_COLOR
-    )
+    mw_ratings = show_mind_wandering_probe(win, ser_port, MW_TESTING_INVOLVED, NA_MW_RATING, quit_experiment, riponda_port=riponda_port, fg_color=FOREGROUND_COLOR, bg_color=BACKGROUND_COLOR)
     for d in block_data: d.update({'mind_wandering_rating_1': mw_ratings[0], 'mind_wandering_rating_2': mw_ratings[1], 'mind_wandering_rating_3': mw_ratings[2], 'mind_wandering_rating_4': mw_ratings[3]})
     try:
         with open(unique_filename, 'a', newline='') as csvfile: csv.DictWriter(csvfile, fieldnames=fieldnames).writerows(block_data)
-    except Exception: pass
+    except: pass
 
     if FEEDBACK_ENABLED:
         correct_rts = [d['rt_cumulative_s'] for d in block_data if d['correct_response'] and not d['is_nogo']]
@@ -607,25 +557,23 @@ for block_num in range(1, NUM_BLOCKS + 1):
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct / total_go) * 100 if total_go > 0 else 0
         feedback_header.text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
-        
-        feedback_stats_fmt = get_text_with_newlines('Screens', 'feedback_stats_fmt', default="Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %")
-        feedback_stats.text = feedback_stats_fmt.format(mean_rt=mean_rt, accuracy=accuracy)
-
+        feedback_stats.text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
         if accuracy < 90: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_accurate'), 'red'
         elif mean_rt > 0.350: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_faster'), 'red'
         else: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_good_job'), 'green'
         feedback_header.draw(); 
         feedback_stats.draw(); 
         feedback_performance.draw(); 
-        utils.send_trigger_pulse(ser_port, 160); 
-        win.flip(); core.wait(3)
+        win.flip(); 
+        core.wait(3)
 
     if block_num < NUM_BLOCKS:
         if MANDATORY_WAIT > 0: fixation_cross.draw(); win.flip(); core.wait(MANDATORY_WAIT)
-        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_main'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response(); utils.send_trigger_pulse(ser_port, 10 + (block_num + 1))
-    block_data = []; gc.collect() 
+        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_main'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
+        win.flip(); 
+        wait_for_response()
+    gc.collect() 
 
-visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_experiment'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
-win.flip(); 
+visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_experiment'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); 
 wait_for_response(); 
 quit_experiment()
