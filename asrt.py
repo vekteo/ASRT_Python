@@ -285,6 +285,7 @@ prep_text = get_text_with_newlines('Screens', 'countdown_message')
 prep_message = visual.TextStim(win, text=prep_text, color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 prep_message.draw()
 win.flip()
+utils.send_trigger_pulse(ser_port, 180)
 core.wait(10.0)
 
 # --- State variables ---
