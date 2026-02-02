@@ -107,7 +107,20 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
             buttons_list.append({'rect': rect, 'number': number_stim, 'label': label_stim, 'rating': detail['key']})
         return buttons_list
 
-    def display_and_collect_rating(question_text, buttons_details, question_onset_trigger, response_base_trigger, riponda_port=None, byte_map=None):
+    def display_and_collect_rating(question_text, buttons_details, question_onset_trigger, response_base_trigger, riponda_port=None, byte_map=None, initial_wait=0.0):
+        
+        # --- INPUT PROTECTION DELAY (BEFORE APPEARANCE) ---
+        # If an initial wait is requested, we pause here BEFORE drawing the question.
+        # This prevents accidental presses from the previous task from registering on the MW probe.
+        if initial_wait > 0:
+            win.flip() # Clear screen to background color
+            core.wait(initial_wait)
+            # Critical: Clear the event buffers to discard any key presses made during the wait
+            event.clearEvents()
+            if riponda_port:
+                riponda_port.reset_input_buffer()
+        # ------------------------------
+
         question_stim = visual.TextStim(win, text=question_text, color='black', height=40, pos=(0, 200), wrapWidth=1000, font='Arial')
         
         buttons = draw_buttons(buttons_details)
@@ -185,13 +198,15 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         return rating
 
     # --- Q1: Collect Primary Focus Rating ---
+    # We pass initial_wait=1.0 here to pause input for 1 second BEFORE Q1 appears
     rating_1 = display_and_collect_rating(
         primary_question, 
         q1_button_details,
         question_onset_trigger=171,
         response_base_trigger=35, 
         riponda_port=riponda_port,
-        byte_map=mw_riponda_map
+        byte_map=mw_riponda_map,
+        initial_wait=1.0 
     )
     if rating_1 == 'quit':
         return [na_mw_rating] * 4
@@ -217,6 +232,7 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         q_onset_trigger = onset_triggers[i]
         q_response_base = response_bases[i]
         
+        # No initial wait for follow-up questions (defaults to 0.0)
         rating_n = display_and_collect_rating(
             full_question, 
             q_data['details'],
