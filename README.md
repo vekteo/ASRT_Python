@@ -40,6 +40,9 @@ The experiment is controlled by an initialization file that allows researchers t
 * **riponda_port:** The COM port assigned to the Riponda hardware.
 * **riponda_baudrate:** The communication speed for the Riponda device.
 * **riponda_keys_list:** The specific characters or codes sent by the response box keys.
+* **background_color:** Background color.
+* **foreground_color:** Foreground (text color).
+
 
 ### [Practice] Section
 * **practice_enabled:** Toggles the inclusion of training blocks before the main task.
