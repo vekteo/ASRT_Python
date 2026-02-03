@@ -4,19 +4,19 @@ This repository contains a Python-based psychological experiment developed using
 
 ---
 
-## Project Overview
+## Project overview
 
 The task requires participants to respond to target images (a "Dog") appearing in one of four circles while withholding responses to "No-Go" images (a "Cat"). The sequence of appearances alternates between a predetermined pattern and random locations to track learning over time.
 
-### Key Features
-* **Implicit Learning:** The task utilizes a pattern-random alternating sequence to assess implicit learning.
-* **Attentional Sampling:** Integrated mind-wandering probes periodically interrupt the task to collect subjective focus ratings.
-* **Hardware Integration:** Supports **Riponda** response boxes and serial port triggers for synchronization with external devices like EEG.
-* **Multilingual Support:** Configurable text for multiple languages (English and Spanish) via external `.ini` files.
+### Key features
+* **Implicit learning:** The task utilizes a pattern-random alternating sequence to assess implicit learning.
+* **Attentional sampling:** Integrated mind-wandering probes periodically interrupt the task to collect subjective focus ratings.
+* **Hardware integration:** Supports **Riponda** response boxes (Cedrus) and serial port triggers for synchronization with external devices like EEG.
+* **Multilingual support:** Configurable text for multiple languages (English and Spanish) via external `.ini` files.
 
 ---
 
-## Configuration Options (`experiment_settings.ini`)
+## Configuration options (`experiment_settings.ini`)
 
 The experiment is controlled by an initialization file that allows researchers to modify the task structure without changing the source code.
 
@@ -73,13 +73,14 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 | **is_nogo** | Identifies trials where a response was meant to be withheld. |
 | **is_practice** | Distinguishes between training and experimental tasks. |
 | **epoch** | Groups blocks to help analyze learning stages over time. |
+| **is_first_response** | Defines if keypress is first response attempt or not. (1 - yes, 0 -no) |
 | **mind_wandering_rating_1-4** | Subjective ratings from the periodic focus probes. |
 
 ---
 
 ## Installation and Usage
 
-1. **Verify Settings:** Open `experiment_settings.ini` to configure your experiment.
-2. **Run Experiment:** Launch `asrt.py` using a Python environment with PsychoPy installed.
-3. **Session Info:** Enter participant number (integer) and select the language in the GUI prompt.
-4. **Follow Prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
+1. **Verify settings:** Open `experiment_settings.ini` to configure your experiment.
+2. **Run experiment:** Launch `asrt.py` using a Python environment with PsychoPy installed.
+3. **Session info:** Enter participant number (integer) and select the language in the GUI prompt (en - English, es - Spanish).
+4. **Follow prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
