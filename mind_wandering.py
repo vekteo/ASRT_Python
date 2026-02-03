@@ -202,7 +202,7 @@ def show_mind_wandering_probe(win, ser_port, mw_testing_involved, na_mw_rating, 
         response_base_trigger=35, 
         riponda_port=riponda_port,
         byte_map=mw_riponda_map,
-        initial_wait=1.0 
+        initial_wait=0.5 
     )
     if rating_1 == 'quit':
         return [na_mw_rating] * 4

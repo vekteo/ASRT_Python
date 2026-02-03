@@ -162,13 +162,13 @@ def show_mw_instructions_and_quiz(win, quit_experiment, RUN_COMPREHENSION_QUIZ, 
             
             if passed:
                 quiz_passed = True
-                success_text = get_text_with_newlines('Quiz', 'quiz_passed_congrats')
-                success_msg = visual.TextStim(
-                    win, text=success_text, color=fg_color, height=30, wrapWidth=1600, font='Arial'
-                )
-                success_msg.draw()
-                win.flip()
-                core.wait(2.0)
+                #success_text = get_text_with_newlines('Quiz', 'quiz_passed_congrats')
+                #success_msg = visual.TextStim(
+                    #win, text=success_text, color=fg_color, height=30, wrapWidth=1600, font='Arial'
+                #)
+                #success_msg.draw()
+                #win.flip()
+                #core.wait(2.0)
                                
                 event.clearEvents()
                 if riponda_port:

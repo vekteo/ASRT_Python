@@ -6,6 +6,7 @@ import configparser
 import numpy as np
 import os
 import io
+import struct
 from datetime import datetime
 from nogo_logic import select_nogo_trials_in_block
 from mind_wandering import show_mind_wandering_probe
@@ -69,6 +70,7 @@ try:
     target_image_path = config.get('Experiment', 'target_image_filename')
     nogo_image_path = config.get('Experiment', 'nogo_image_filename')
 
+    # Color settings
     BACKGROUND_COLOR = config.get('Experiment', 'background_color', fallback='white')
     FOREGROUND_COLOR = config.get('Experiment', 'foreground_color', fallback='black')
 
@@ -78,7 +80,7 @@ try:
         
     RIPONDA_ENABLED = config.getboolean('Experiment', 'riponda_enabled', fallback=False)
     RIPONDA_PORT_NAME = config.get('Experiment', 'riponda_port', fallback='COM3')
-    RIPONDA_BAUDRATE = config.getint('Experiment', 'riponda_baudrate', fallback=2000000)
+    RIPONDA_BAUDRATE = config.getint('Experiment', 'riponda_baudrate', fallback=115200)
       
 except (configparser.Error, FileNotFoundError) as e:
     print(f"Error reading configuration file: {e}")
@@ -127,7 +129,7 @@ win = visual.Window(
     color=BACKGROUND_COLOR, 
     multiSample=True, 
     numSamples=16,
-    waitBlanking=True
+    waitBlanking=True 
 )
 kb = keyboard.Keyboard()
 circle_radius = 60
@@ -152,7 +154,6 @@ for s in stimuli:
 feedback_header = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=40, pos=(0, 100), wrapWidth=1600, font='Arial')
 feedback_stats = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=30, pos=(0, 0), wrapWidth=1600, font='Arial')
 feedback_performance = visual.TextStim(win, text='', color='green', height=40, pos=(0, -100), wrapWidth=1600, font='Arial')
-continuation_message_text = visual.TextStim(win, text='', color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 
 # --- Riponda Byte Map ---
 riponda_byte_map = {48: keys[0], 112: keys[1], 176: keys[2], 240: keys[3]}
@@ -183,14 +184,11 @@ if RIPONDA_ENABLED:
 def quit_experiment():
     if ser_port:
         try:
-            ser_port.reset_input_buffer()
-            ser_port.reset_output_buffer()
             ser_port.close()
         except Exception:
             pass
     if riponda_port:
         try:
-            riponda_port.reset_input_buffer()
             riponda_port.close()
         except Exception:
             pass
@@ -238,6 +236,7 @@ instruction_message.draw()
 win.flip()
 wait_for_response()
 
+# --- No-Go instructions ---
 if NO_GO_TRIALS_ENABLED:
     try:
         nogo_inst_text = get_text_with_newlines('Instructions', 'nogo_screen')
@@ -248,6 +247,7 @@ if NO_GO_TRIALS_ENABLED:
     win.flip()
     wait_for_response()
 
+# --- MW Instructions & Quiz ---
 if MW_TESTING_INVOLVED:
     show_mw_instructions_and_quiz(
         win, 
@@ -259,6 +259,7 @@ if MW_TESTING_INVOLVED:
         bg_color=BACKGROUND_COLOR
     )
 
+# --- Start Experiment Screen ---
 if PRACTICE_ENABLED:
     start_text = get_text_with_newlines('Screens', 'start_practice').format(NUM_PRACTICE_BLOCKS=NUM_PRACTICE_BLOCKS)
     start_trigger_value = 90
@@ -275,6 +276,7 @@ if 'escape' in [k.name for k in key_pressed]:
 
 utils.send_trigger_pulse(ser_port, start_trigger_value)
 
+# --- Countdown ---
 prep_text = get_text_with_newlines('Screens', 'countdown_message')
 prep_message = visual.TextStim(win, text=prep_text, color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 prep_message.draw()
@@ -282,14 +284,13 @@ win.flip()
 utils.send_trigger_pulse(ser_port, 180)
 core.wait(10.0)
 
+# --- State variables ---
 total_trial_count = 0
 NA_MW_RATING = 'NA'
 
 # --- Practice Loop ---
 for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED else []:
     block_data = []
-    pos_minus_1 = None
-    pos_minus_2 = None
     
     nogo_trial_indices_in_block = set()
     if NO_GO_TRIALS_ENABLED:
@@ -299,7 +300,8 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         try:
             nogo_indices = select_nogo_trials_in_block(range(len(pre_block_trials)), pre_block_trials, 0, NUM_NO_GO_TRIALS)
             nogo_trial_indices_in_block.update(nogo_indices)
-        except: core.quit()
+        except Exception as e:
+            core.quit()
 
     practice_positions_list = []
     positions_per_stim = TRIALS_PER_BLOCK // len(stimuli)
@@ -313,11 +315,14 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
     for trial_in_block in range(TRIALS_PER_BLOCK):
         total_trial_count += 1
         kb.clearEvents()
+        if riponda_port: 
+             riponda_port.reset_input_buffer()
+
         trial_in_block_num = trial_in_block + 1
         is_nogo = (trial_in_block in nogo_trial_indices_in_block)
 
         for stim_dict in stimuli:
-            stim_dict['stim'].fillColor = 'white'
+            stim_dict['stim'].fillColor = 'white' 
             stim_dict['stim'].draw()
         win.flip()
         core.wait(ISI_DURATION)
@@ -341,20 +346,20 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         border.draw()
         target_image.draw()
         
-        # High precision onset timing
-        onset_time = win.flip()
+        # --- PRECISE ONSET ---
+        onset_time = win.flip() 
         utils.send_trigger_pulse(ser_port, (251 if is_nogo else 151) + target_stim_pos)
 
         if is_nogo:
             response_logged = False
-            while core.getTime() - onset_time < NOGO_TRIAL_DURATION:
+            while (core.getTime() - onset_time) < NOGO_TRIAL_DURATION:
                 responses = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if not responses and riponda_port and riponda_port.in_waiting >= 6: 
                     try:
-                        packet = riponda_port.read(6) 
+                        packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()]
-                        riponda_port.reset_input_buffer() 
+                            rt_now = core.getTime() - onset_time
+                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt_now})()]
                     except Exception: pass
                 
                 if responses and not response_logged:
@@ -363,12 +368,12 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     rt_val = resp.rt if hasattr(resp, 'rt') else core.getTime() - onset_time
                     utils.send_trigger_pulse(ser_port, 91 + keys.index(resp.name) + 1)
                     block_data.append({
-                        'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
+                        'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'is_first_response': 1, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
                     })
                     response_logged = True
             if not response_logged:
                 block_data.append({
-                    'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
+                    'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': practice_block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': True, 'epoch': 0, 'is_first_response': 1, 'mind_wandering_rating_1': na_ratings[0], 'mind_wandering_rating_2': na_ratings[1], 'mind_wandering_rating_3': na_ratings[2], 'mind_wandering_rating_4': na_ratings[3]
                 })
         else:
             correct_response_given = False
@@ -384,8 +389,8 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
                     try:
                         packet = riponda_port.read(6) 
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()
-                        riponda_port.reset_input_buffer() 
+                            rt_now = core.getTime() - onset_time
+                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt_now})()
                     except Exception: pass
                 
                 if res_obj:
@@ -418,15 +423,22 @@ for practice_block_num in range(1, NUM_PRACTICE_BLOCKS + 1) if PRACTICE_ENABLED 
         if accuracy < 90: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_accurate'), 'red'
         elif mean_rt > 0.350: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_faster'), 'red'
         else: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_good_job'), 'green'
-        feedback_header.draw(); feedback_stats.draw(); feedback_performance.draw(); win.flip(); core.wait(3)
+        feedback_header.draw(); 
+        feedback_stats.draw(); 
+        feedback_performance.draw(); 
+        win.flip(); 
+        core.wait(3)
     
     gc.collect() 
     if practice_block_num < NUM_PRACTICE_BLOCKS:
-        if MANDATORY_WAIT > 0: fixation_cross.draw(); win.flip(); core.wait(MANDATORY_WAIT)
-        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response()
+        if MANDATORY_WAIT > 0: 
+            fixation_cross.draw(); 
+            win.flip(); 
+            core.wait(MANDATORY_WAIT)
+        visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response(); utils.send_trigger_pulse(ser_port, 98)
 
 if PRACTICE_ENABLED:
-    visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response()
+    visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_practice'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); wait_for_response(); utils.send_trigger_pulse(ser_port, 99)
 
 # --- Main Experiment Loop ---
 for block_num in range(1, NUM_BLOCKS + 1):
@@ -455,10 +467,15 @@ for block_num in range(1, NUM_BLOCKS + 1):
 
     for trial_in_block in range(TRIALS_PER_BLOCK):
         total_trial_count += 1; trial_in_block_num = trial_in_block + 1; is_nogo = (trial_in_block in nogo_trial_indices_in_block)
+        
+        if riponda_port: riponda_port.reset_input_buffer()
+        kb.clearEvents()
+        
         for stim_dict in stimuli: 
             stim_dict['stim'].fillColor = 'white'
             stim_dict['stim'].draw()
-        win.flip(); core.wait(ISI_DURATION)
+        win.flip(); 
+        core.wait(ISI_DURATION)
 
         if trial_in_block_num % 2 == 0:
             target_stim_pos = current_pattern_sequence[pattern_index]; pattern_index = (pattern_index + 1) % len(current_pattern_sequence); trial_type = 'P'
@@ -496,29 +513,29 @@ for block_num in range(1, NUM_BLOCKS + 1):
         border_circles[target_stim_index].draw(); 
         target_image.draw()
         
-        # High precision onset timing
         onset_time = win.flip()
         utils.send_trigger_pulse(ser_port, trial_trigger)
 
         if is_nogo:
             response_logged = False
-            while core.getTime() - onset_time < NOGO_TRIAL_DURATION:
+            while (core.getTime() - onset_time) < NOGO_TRIAL_DURATION:
                 responses = kb.getKeys(keyList=keys + ['escape'], waitRelease=False)
                 if not responses and riponda_port and riponda_port.in_waiting >= 6:
                     try:
                         packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()]
-                        riponda_port.reset_input_buffer()
+                            rt_now = core.getTime() - onset_time
+                            responses = [type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt_now})()]
                     except: pass
+                    
                 if responses and not response_logged:
                     resp = responses[0]
                     if resp.name == 'escape': quit_experiment()
                     rt_val = resp.rt if hasattr(resp, 'rt') else core.getTime() - onset_time
                     utils.send_trigger_pulse(ser_port, 91 + keys.index(resp.name) + 1)
-                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
+                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_val, 'rt_cumulative_s': rt_val, 'correct_key_pressed': 'NoGo', 'response_key_pressed': resp.name, 'correct_response': False, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'is_first_response': 1, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
                     response_logged = True
-            if not response_logged: block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
+            if not response_logged: block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': None, 'rt_cumulative_s': None, 'correct_key_pressed': 'NoGo', 'response_key_pressed': 'None', 'correct_response': True, 'is_nogo': True, 'is_practice': False, 'epoch': epoch, 'is_first_response': 1, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
         else:
             correct_response_given = False; first_attempt_in_trial = True; time_of_last_response = 0.0
             while not correct_response_given:
@@ -530,8 +547,8 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     try:
                         packet = riponda_port.read(6)
                         if packet[0] == 0x6b and packet[1] in riponda_byte_map:
-                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': core.getTime() - onset_time})()
-                        riponda_port.reset_input_buffer()
+                            rt_now = core.getTime() - onset_time
+                            res_obj = type('obj', (object,), {'name': riponda_byte_map[packet[1]], 'rt': rt_now})()
                     except: pass
                 if res_obj:
                     if res_obj.name == 'escape': quit_experiment()
@@ -539,7 +556,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
                     rt_non_cumulative = rt_cumulative - time_of_last_response
                     was_correct = (res_obj.name == stimuli[target_stim_index]['key'])
                     utils.send_trigger_pulse(ser_port, (71 if was_correct else 81) + keys.index(res_obj.name) + 1)
-                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_non_cumulative, 'rt_cumulative_s': rt_cumulative, 'correct_key_pressed': stimuli[target_stim_index]['key'], 'response_key_pressed': res_obj.name, 'correct_response': was_correct, 'is_nogo': False, 'is_practice': False, 'epoch': epoch, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
+                    block_data.append({'participant': expInfo['participant'], 'session': expInfo['session'], 'block_number': block_num, 'trial_number': total_trial_count, 'trial_in_block_num': trial_in_block_num, 'trial_type': trial_type, 'triplet_type': triplet_type, 'sequence_used': sequence_to_save, 'stimulus_position_num': target_stim_pos, 'rt_non_cumulative_s': rt_non_cumulative, 'rt_cumulative_s': rt_cumulative, 'correct_key_pressed': stimuli[target_stim_index]['key'], 'response_key_pressed': res_obj.name, 'correct_response': was_correct, 'is_nogo': False, 'is_practice': False, 'epoch': epoch, 'is_first_response': 1 if first_attempt_in_trial else 0, 'mind_wandering_rating_1': NA_MW_RATING, 'mind_wandering_rating_2': NA_MW_RATING, 'mind_wandering_rating_3': NA_MW_RATING, 'mind_wandering_rating_4': NA_MW_RATING})
                     first_attempt_in_trial = False
                     time_of_last_response = rt_cumulative
                     if was_correct: correct_response_given = True
@@ -571,9 +588,11 @@ for block_num in range(1, NUM_BLOCKS + 1):
         if MANDATORY_WAIT > 0: fixation_cross.draw(); win.flip(); core.wait(MANDATORY_WAIT)
         visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_main'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
         win.flip(); 
-        wait_for_response()
+        wait_for_response(); 
+        utils.send_trigger_pulse(ser_port, 10 + (block_num + 1))
     gc.collect() 
 
-visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_experiment'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); win.flip(); 
+visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_experiment'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
+win.flip(); 
 wait_for_response(); 
 quit_experiment()
