@@ -85,7 +85,7 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 3. **Session info:** Enter participant number (integer) and select the language in the GUI prompt (en - English, es - Spanish).
 4. **Follow prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
 
-## 🛠️ Performance fix: COM port latency
+## Performance fix: COM port latency
 
 If your reaction time (RT) data shows "staircase" patterns or 16ms jumps, you must adjust the Windows Serial Driver settings to ensure millisecond precision.
 
