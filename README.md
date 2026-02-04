@@ -50,7 +50,7 @@ The experiment is controlled by an initialization file that allows researchers t
 
 ---
 
-## Logged Data Output
+## Logged data output
 
 The experiment creates a `data` folder and saves trial-by-trial information in a unique CSV file for each participant.
 
@@ -78,9 +78,22 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 
 ---
 
-## Installation and Usage
+## Installation and usage
 
 1. **Verify settings:** Open `experiment_settings.ini` to configure your experiment.
 2. **Run experiment:** Launch `asrt.py` using a Python environment with PsychoPy installed.
 3. **Session info:** Enter participant number (integer) and select the language in the GUI prompt (en - English, es - Spanish).
 4. **Follow prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
+
+## 🛠️ Performance fix: COM port latency
+
+If your reaction time (RT) data shows "staircase" patterns or 16ms jumps, you must adjust the Windows Serial Driver settings to ensure millisecond precision.
+
+### Steps to Fix:
+1. **Open Device Manager**: Right-click Start and select **Device Manager**.
+2. **Find COM Port**: Expand **Ports (COM & LPT)**, right-click your device (e.g., USB Serial Port), and select **Properties**.
+3. **Advanced Settings**: Go to the **Port Settings** tab and click the **Advanced** button.
+4. **Set Latency to 1ms**: Change the **Latency Timer (msec)** from 16 to **1**.
+5. **Save**: Click **OK** on all windows and restart your script.
+
+**Why this works**: The default 16ms setting buffers response data before sending it to Python. Reducing this to 1ms allows PsychoPy to "see" the button press immediately, resulting in a smooth and accurate RT distribution.
