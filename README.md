@@ -12,7 +12,7 @@ The task requires participants to respond to target images (a "Dog") appearing i
 * **Implicit learning:** The task utilizes a pattern-random alternating sequence to assess implicit learning.
 * **Attentional sampling:** Integrated mind-wandering probes periodically interrupt the task to collect subjective focus ratings.
 * **Hardware integration:** Supports **Riponda** response boxes (Cedrus) and serial port triggers for synchronization with external devices like EEG.
-* **Multilingual support:** Configurable text for multiple languages (English and Spanish) via external `.ini` files.
+* **Multilingual support:** Configurable text for multiple languages (English, Spanish, and Hungarian) via external `.ini` files.
 
 ---
 
@@ -82,7 +82,7 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 
 1. **Verify settings:** Open `experiment_settings.ini` to configure your experiment.
 2. **Run experiment:** Launch `asrt.py` using a Python environment with PsychoPy installed.
-3. **Session info:** Enter participant number (integer) and select the language in the GUI prompt (en - English, es - Spanish).
+3. **Session info:** Enter participant number (integer) and select the language in the GUI prompt (en - English, es - Spanish, hu - Hungarian).
 4. **Follow prompts:** The participant will be guided through instructions, an optional quiz, and practice blocks before the main task begins.
 
 ## Performance fix: COM port latency
