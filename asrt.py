@@ -88,7 +88,7 @@ except (configparser.Error, FileNotFoundError) as e:
 
 # --- Load experiment text ---
 language_code = expInfo['language']
-text_filename = f'experiment_text_{language_code}.ini'
+text_filename = f'language/experiment_text_{language_code}.ini'
 text_config = configparser.ConfigParser()
 
 try:
