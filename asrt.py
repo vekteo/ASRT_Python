@@ -17,7 +17,7 @@ from mw_instructions import show_mw_instructions_and_quiz
 import gc
 
 # --- GUI for Participant Info ---
-expInfo = {'participant': '1', 'session': '1', 'language': ['es', 'en']}
+expInfo = {'participant': '1', 'session': '1', 'language': ['es', 'en', 'hu']}
 dlg = gui.DlgFromDict(dictionary=expInfo, title='Experiment Settings')
 if not dlg.OK:
     core.quit()

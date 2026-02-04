@@ -26,7 +26,7 @@ def get_text_with_newlines(section, option, default=None):
     
     try:
         text_content = GLOBAL_TEXT_CONFIG.get(section, option, raw=True)
-        return text_content.encode('latin-1').decode('unicode_escape')
+        return text_content.replace('\\n', '\n')
         
     except (configparser.NoOptionError, configparser.NoSectionError):
         if default is not None:
