@@ -574,10 +574,15 @@ for block_num in range(1, NUM_BLOCKS + 1):
         mean_rt = np.mean(correct_rts) if correct_rts else 0
         accuracy = (total_correct / total_go) * 100 if total_go > 0 else 0
         feedback_header.text = get_text_with_newlines('Screens', 'feedback_header').format(block_num=block_num)
-        feedback_stats.text = f"Mean RT: {mean_rt:.2f} s\nAccuracy: {accuracy:.2f} %"
-        if accuracy < 90: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_accurate'), 'red'
-        elif mean_rt > 0.350: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_faster'), 'red'
-        else: feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_good_job'), 'green'
+        rt_label = get_text_with_newlines('Screens', 'feedback_rt')
+        acc_label = get_text_with_newlines('Screens', 'feedback_acc')
+        feedback_stats.text = f"{rt_label} {mean_rt:.2f} s\n{acc_label} {accuracy:.2f} %"        
+        if accuracy < 90: 
+            feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_accurate'), 'red'
+        elif mean_rt > 0.350: 
+            feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_faster'), 'red'
+        else: 
+            feedback_performance.text, feedback_performance.color = get_text_with_newlines('Screens', 'feedback_good_job'), 'green'
         feedback_header.draw(); 
         feedback_stats.draw(); 
         feedback_performance.draw(); 
