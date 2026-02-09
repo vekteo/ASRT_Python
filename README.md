@@ -106,7 +106,7 @@ The `asrt_analysis.ipynb` notebook performs the following key functions:
 1. **Data aggregation**: Automatically detects and merges participant CSV files.
 2. **Preprocessing**: Cleans data by filtering non-learning trials.
 3. **Outlier removal**: Applies robust statistical filtering (MAD) and absolute thresholds to remove outliers.
-4. **Visualization**: Generates distribution plots to assess normality and statistical learning.
+4. **Visualization**: Generates plots to assess normality and statistical learning.
 5. **Statistical analysis**: Runs ANOVA and Linear Mixed Models to quantify learning effects.
 
 ## 🛠 Prerequisites
