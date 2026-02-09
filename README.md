@@ -89,7 +89,7 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 
 If your reaction time (RT) data shows "staircase" patterns or 16ms jumps, you must adjust the Windows Serial Driver settings to ensure millisecond precision.
 
-### Steps to Fix:
+### Steps to fix:
 1. **Open Device Manager**: Right-click Start and select **Device Manager**.
 2. **Find COM Port**: Expand **Ports (COM & LPT)**, right-click your device (e.g., USB Serial Port), and select **Properties**.
 3. **Advanced Settings**: Go to the **Port Settings** tab and click the **Advanced** button.
@@ -97,3 +97,21 @@ If your reaction time (RT) data shows "staircase" patterns or 16ms jumps, you mu
 5. **Save**: Click **OK** on all windows and restart your script.
 
 **Why this works**: The default 16ms setting buffers response data before sending it to Python. Reducing this to 1ms allows PsychoPy to "see" the button press immediately, resulting in a smooth and accurate RT distribution.
+
+## ASRT data analysis pipeline
+
+This repository also includes a comprehensive **R-based analysis pipeline** designed to process the collected data. The pipeline automates the workflow from raw data aggregation to statistical analysis, ensuring consistent and reproducible results for sequence learning experiments.
+
+The `asrt_analysis.ipynb` notebook performs the following key functions:
+1. **Data aggregation**: Automatically detects and merges participant CSV files.
+2. **Preprocessing**: Cleans data by filtering non-learning trials.
+3. **Outlier removal**: Applies robust statistical filtering (MAD) and absolute thresholds to remove outliers.
+4. **Visualization**: Generates distribution plots to assess normality and statistical learning.
+5. **Statistical analysis**: Runs ANOVA and Linear Mixed Models to quantify learning effects.
+
+## 🛠 Prerequisites
+
+To run this analysis, you need an **R** environment (e.g., RStudio, Jupyter Notebook with IRKernel). Ensure the following libraries are installed:
+
+```r
+install.packages(c("ggplot2", "readr", "lme4", "afex", "dplyr", "tidyr", "moments"))
