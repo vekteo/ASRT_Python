@@ -109,7 +109,7 @@ The `asrt_analysis.ipynb` notebook performs the following key functions:
 4. **Visualization**: Generates plots to assess normality and statistical learning.
 5. **Statistical analysis**: Runs ANOVA and Linear Mixed Models to quantify learning effects.
 
-## 🛠 Prerequisites
+# Prerequisites
 
 To run this analysis, you need an **R** environment (e.g., RStudio, Jupyter Notebook with IRKernel). Ensure the following libraries are installed:
 
