@@ -275,7 +275,7 @@ if PRACTICE_ENABLED:
     start_trigger_value = 90
 else:
     start_text = get_text_with_newlines('Screens', 'start_main')
-    start_trigger_value = 11
+    start_trigger_value = 1
 start_message = visual.TextStim(win, text=start_text, color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial')
 start_message.draw()
 win.flip()
@@ -604,7 +604,7 @@ for block_num in range(1, NUM_BLOCKS + 1):
         visual.TextStim(win, text=get_text_with_newlines('Screens', 'next_main'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
         win.flip(); 
         wait_for_response(); 
-        utils.send_trigger_pulse(ser_port, 10 + (block_num + 1))
+        utils.send_trigger_pulse(ser_port, 0 + (block_num + 1))
     gc.collect() 
 
 visual.TextStim(win, text=get_text_with_newlines('Screens', 'end_experiment'), color=FOREGROUND_COLOR, height=40, wrapWidth=1600, font='Arial').draw(); 
