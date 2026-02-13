@@ -1,5 +1,3 @@
-######################################################################################################
-
 # Created by Teodóra Vékony (Gran Canaria Cognitive Research Center, Universidad del Atlántico Medio)
 # email: teodora.vekony@pdi.atlanticomedio.es
 # gccognitive.es
@@ -17,6 +15,7 @@ import numpy as np
 import os
 import io
 import struct
+import sys
 from datetime import datetime
 from nogo_logic import select_nogo_trials_in_block
 from mind_wandering import show_mind_wandering_probe
@@ -41,6 +40,13 @@ unique_filename = os.path.join(
     data_folder,
     f"participant_{expInfo['participant']}_session_{expInfo['session']}_{timestamp_str}_data.csv"
 )
+
+# --- START LOGGING HERE ---
+log_filename = unique_filename.replace('.csv', '_console_log.txt')
+print(f"Redirecting output to: {log_filename}")
+
+original_stdout = sys.stdout
+sys.stdout = utils.LogTee(log_filename, original_stdout)
 
 # --- Define Fieldnames for CSV ---
 fieldnames = ['participant', 'session', 'block_number', 'trial_number', 'trial_in_block_num', 'trial_type', 'triplet_type', 'sequence_used', 'stimulus_position_num', 'rt_non_cumulative_s', 'rt_cumulative_s', 'correct_key_pressed', 'response_key_pressed', 'correct_response', 'is_nogo', 'is_practice', 'epoch', 'is_first_response', 
@@ -79,8 +85,6 @@ try:
     keys = [k.strip() for k in KEYS_STR.split(',')]
     target_image_path = config.get('Experiment', 'target_image_filename')
     nogo_image_path = config.get('Experiment', 'nogo_image_filename')
-
-    # Color settings
     BACKGROUND_COLOR = config.get('Experiment', 'background_color', fallback='white')
     FOREGROUND_COLOR = config.get('Experiment', 'foreground_color', fallback='black')
 
@@ -213,6 +217,10 @@ def quit_experiment():
             win.close()
         except Exception:
             pass
+    
+    if hasattr(sys.stdout, 'close'):
+        sys.stdout.close()
+    
     core.quit()
 
 def wait_for_response():

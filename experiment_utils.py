@@ -1,12 +1,49 @@
-# Contains helper functions for the main experiment script.
-
 from psychopy import visual, core
+from datetime import datetime
 import serial
 import csv
 import os
 
+class LogTee:
+    """Captures stdout, adds timestamps, and writes to both console and file."""
+    def __init__(self, filename, original_stream):
+        self.file = open(filename, 'w', encoding='utf-8')
+        self.original_stream = original_stream
+        self.new_line = True 
+
+    def write(self, message):
+        self.original_stream.write(message)
+        self.original_stream.flush()
+
+        if message:
+            timestamp = datetime.now().strftime("[%H:%M:%S.%f]")
+            
+            parts = message.split('\n')
+            
+            for i, part in enumerate(parts):
+                if self.new_line and part:
+                    self.file.write(f"{timestamp} {part}")
+                    self.new_line = False
+                elif part:
+                    self.file.write(part)
+                
+                if i < len(parts) - 1:
+                    self.file.write('\n')
+                    self.new_line = True
+                    
+        self.file.flush()
+
+    def flush(self):
+        self.original_stream.flush()
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
+
 def send_trigger_pulse(ser_port, trigger_value, pulse_duration=0.05):
     """Sends a trigger pulse (value, duration) and resets the port to 0."""
+    print(f"Trigger sent: {trigger_value}") 
+    
     if ser_port:
         try:
             ser_port.write(bytes([trigger_value]))
@@ -17,7 +54,7 @@ def send_trigger_pulse(ser_port, trigger_value, pulse_duration=0.05):
         except Exception as e:
             print(f"Error writing to serial port: {e}")
     else:
-        print(f"Faking serial port trigger: {trigger_value}")
+        pass
 
 def save_and_quit(win, unique_filename, all_data):
     """Saves all collected data to the unique CSV file and quits."""
@@ -41,19 +78,16 @@ def draw_example_buttons(win, details):
     y_pos_label = -150
     
     for detail in details:
-        # Visual Button (Rectangle)
         rect = visual.Rect(
             win=win, width=150, height=100, pos=(detail['x'], y_pos_rect),
             fillColor='lightgrey', lineColor='black', lineWidth=3
         )
         rect.draw()
-        # Number Label
         number_stim = visual.TextStim(
             win, text=detail['key'], color='black', height=50, pos=(detail['x'], y_pos_rect),
             font='Arial'
         )
         number_stim.draw()
-        # Text Description
         label_stim = visual.TextStim(
             win, text=detail['label'], color='black', height=20, pos=(detail['x'], y_pos_label),
             wrapWidth=200, font='Arial'
