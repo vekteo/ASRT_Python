@@ -9,10 +9,10 @@ This repository contains a Python-based psychological experiment developed using
 The task requires participants to respond to target images appearing in one of four circles. The locations of these images alternate between a predetermined pattern and random locations, allowing researchers to track the acquisition of implicit knowledge over time.
 
 ### Key features
-1. **Task Structure:** The experiment consists of 30 blocks, each containing 80 trials.
+1. **Task structure:** The experiment consists of 30 blocks, each containing 80 trials.
 2. **Timing:** An Response-to-stimulus Interval (RSI) of 0.120 seconds is set between trials.
 3. **Implicit learning:** Utilizes a pattern-random alternating sequence to assess learning.
-4. **Hardware Integration:** Configured for Cedrus Riponda response boxes (COM5, 115200 baud) and standard keyboard input.
+4. **Hardware integration:** Configured for Cedrus Riponda response boxes (COM5, 115200 baud) and standard keyboard input.
 5. **Feedback:** Participants receive performance summaries (Accuracy and Mean RT) after each block, with a mandatory 6-second wait before proceeding.
 
 ---
