@@ -1,52 +1,58 @@
 # Alternating Serial Reaction Time (ASRT) Task (PsychoPy)
 
-This repository contains a Python-based psychological experiment developed using **PsychoPy** that implements a modified **Alternating Serial Reaction Time (ASRT)** task. The experiment is designed to study implicit sequence learning while monitoring attentional states through **No-Go trials** and **Mind-Wandering (MW) probes**.
+This repository contains a Python-based psychological experiment developed using **PsychoPy** that implements an **Alternating Serial Reaction Time (ASRT)** task. The experiment is designed to study implicit sequence learning through a pattern-random alternating sequence.
 
 ---
 
 ## Project overview
 
-The task requires participants to respond to target images (a "Dog") appearing in one of four circles while withholding responses to "No-Go" images (a "Cat"). The sequence of appearances alternates between a predetermined pattern and random locations to track learning over time.
+The task requires participants to respond to target images appearing in one of four circles. The locations of these images alternate between a predetermined pattern and random locations, allowing researchers to track the acquisition of implicit knowledge over time.
 
 ### Key features
-* **Implicit learning:** The task utilizes a pattern-random alternating sequence to assess implicit learning.
-* **Attentional sampling:** Integrated mind-wandering probes periodically interrupt the task to collect subjective focus ratings.
-* **Hardware integration:** Supports **Riponda** response boxes (Cedrus) and serial port triggers for synchronization with external devices like EEG.
-* **Multilingual support:** Configurable text for multiple languages (English, Spanish, and Hungarian) via external `.ini` files.
+1. **Task Structure:** The experiment consists of 30 blocks, each containing 80 trials.
+2. **Timing:** An Response-to-stimulus Interval (RSI) of 0.120 seconds is set between trials.
+3. **Implicit learning:** Utilizes a pattern-random alternating sequence to assess learning.
+4. **Hardware Integration:** Configured for Cedrus Riponda response boxes (COM5, 115200 baud) and standard keyboard input.
+5. **Feedback:** Participants receive performance summaries (Accuracy and Mean RT) after each block, with a mandatory 6-second wait before proceeding.
 
 ---
 
 ## Configuration options (`experiment_settings.ini`)
 
-The experiment is controlled by an initialization file that allows researchers to modify the task structure without changing the source code.
+The experiment is controlled by an initialization file that allows researchers to modify the task structure without changing the source code. The variables below are organized exactly as they appear in the configuration file.
 
-### [Experiment] Section
-* **num_trials:** The total number of trials within a single block.
-* **pattern_sequence:** The base sequence used for the pattern trials.
-* **num_blocks:** The total number of blocks in the experiment.
-* **interference_epoch_enabled:** If set to True, the pattern sequence is reversed during a specific epoch to test interference.
-* **interference_epoch_num:** Determines which epoch (group of blocks) triggers the interference sequence.
-* **no_go_trials_enabled:** Toggles whether "No-Go" trials are active.
-* **num_no_go_trials:** The quantity of no-go trials included in each block.
-* **mw_testing_involved:** Enables the 4-question mind-wandering probes throughout the session.
-* **run_quiz_if_mw_enabled:** Determines if a comprehension quiz is shown before the task to ensure participants understand the probe definitions.
-* **isi_duration_s:** The duration of the blank screen (Inter-Stimulus Interval) between trials in seconds.
-* **nogo_trial_duration_s:** The display time for a no-go stimulus.
-* **feedback_enabled:** Toggles the performance summary screen (Accuracy and Mean RT) after each block.
-* **response_keys_list:** The physical keyboard keys mapped to the four stimulus positions.
-* **target_image_filename:** The image file path for the primary "Go" target.
-* **nogo_image_filename:** The image file path for the "No-Go" target.
-* **riponda_enabled:** Toggles support for the Riponda response box.
-* **riponda_port:** The COM port assigned to the Riponda hardware.
-* **riponda_baudrate:** The communication speed for the Riponda device.
-* **riponda_keys_list:** The specific characters or codes sent by the response box keys.
-* **background_color:** Background color.
-* **foreground_color:** Foreground (text color).
+### [Experiment]
 
+| Variable | Description | Current Value |
+| :--- | :--- | :--- |
+| **num_trials** | The total number of trials within a single block. | 80 |
+| **num_blocks** | The total number of blocks in the experiment. | 30 |
+| **interference_epoch_enabled** | If set to True, the pattern sequence is reversed during a specific epoch to test interference. | False |
+| **interference_epoch_num** | Determines which epoch (group of blocks) triggers the interference sequence. | 1 |
+| **isi_duration_s** | The duration of the blank screen (Inter-Stimulus Interval) between trials in seconds. | 0.120 |
+| **feedback_enabled** | Toggles the performance summary screen (Accuracy and Mean RT) after each block. | True |
+| **mandatory_wait_before_next_block_s** | Mandatory wait time before proceeding to the next block in seconds. | 6.0 |
+| **mw_testing_involved** | Enables the 4-question mind-wandering probes throughout the session. | False |
+| **run_quiz_if_mw_enabled** | Determines if a comprehension quiz is shown before the task to ensure participants understand the probe definitions. | False |
+| **no_go_trials_enabled** | Toggles whether "No-Go" trials are active. | False |
+| **num_no_go_trials** | The quantity of no-go trials included in each block. | 0 |
+| **nogo_trial_duration_s** | The display time for a no-go stimulus. | 1.0 |
+| **target_image_filename** | The image file path for the primary "Go" target. | images/target_image.png |
+| **nogo_image_filename** | The image file path for the "No-Go" target. | images/nogo_image.png |
+| **background_color** | Background color. | black |
+| **foreground_color** | Foreground (text color). | white |
+| **response_keys_list** | The physical keyboard keys mapped to the four stimulus positions. | s, f, j, l |
+| **riponda_enabled** | Toggles support for the Riponda response box. | True |
+| **riponda_port** | The COM port assigned to the Riponda hardware. | COM5 |
+| **riponda_baudrate** | The communication speed for the Riponda device. | 115200 |
+| **riponda_keys_list** | The specific characters or codes sent by the response box keys. | '1', '2', '3', '4' |
 
-### [Practice] Section
-* **practice_enabled:** Toggles the inclusion of training blocks before the main task.
-* **num_practice_blocks:** The number of blocks used for participant training.
+### [Practice]
+
+| Variable | Description | Current Value |
+| :--- | :--- | :--- |
+| **practice_enabled** | Toggles the inclusion of training blocks before the main task. | False |
+| **num_practice_blocks** | The number of blocks used for participant training. | 0 |
 
 ---
 
@@ -89,7 +95,6 @@ The experiment creates a `data` folder and saves trial-by-trial information in a
 
 If your reaction time (RT) data shows "staircase" patterns or 16ms jumps, you must adjust the Windows Serial Driver settings to ensure millisecond precision.
 
-### Steps to fix:
 1. **Open Device Manager**: Right-click Start and select **Device Manager**.
 2. **Find COM Port**: Expand **Ports (COM & LPT)**, right-click your device (e.g., USB Serial Port), and select **Properties**.
 3. **Advanced Settings**: Go to the **Port Settings** tab and click the **Advanced** button.
